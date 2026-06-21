@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["tool", "version", "summary", "verbs"],
+  "additionalProperties": false,
+  "properties": {
+    "tool": {"type": "string"},
+    "version": {"type": "string"},
+    "summary": {"type": "string"},
+    "verbs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "summary", "args", "pinned", "mutating"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "summary": {"type": "string"},
+          "pinned": {"type": "boolean"},
+          "mutating": {"type": "boolean"},
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type", "required"],
+              "additionalProperties": false,
+              "properties": {
+                "name": {"type": "string"},
+                "type": {"enum": ["string", "integer", "number", "boolean", "array"]},
+                "required": {"type": "boolean"},
+                "enum": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

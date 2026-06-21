@@ -39,6 +39,16 @@ class BeheaxiApp:
         def _root() -> None:  # pragma: no cover - structural
             pass
 
+        # Auto-register the `describe` command so it always exists. It is framework
+        # plumbing: intentionally NOT added to self._verbs, so it is excluded from the
+        # manifest and the dashboard verb menu.
+        from . import describe as _describe
+
+        @self._typer.command(name="describe")
+        def _describe_cmd() -> None:
+            """Emit the registration manifest (describe --json is the contract surface)."""
+            self.emit(_describe.build_manifest(self))
+
     # --- registration -------------------------------------------------------
     def command(
         self, *, pinned: bool = False, mutating: bool = False, name: str | None = None
