@@ -12,7 +12,7 @@ from .errors import ExitCode
 from . import output
 
 try:  # click is a standalone package in older Typer, vendored under typer._click in >=0.26
-    from click.exceptions import ClickException as _ClickException
+    from click.exceptions import ClickException as _ClickException  # type: ignore[import-not-found]
 except ModuleNotFoundError:  # pragma: no cover - depends on installed Typer packaging
     from typer._click.exceptions import ClickException as _ClickException
 
