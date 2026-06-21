@@ -1,0 +1,28 @@
+[project]
+name = "beheaxi"
+version = "0.1.0"
+description = "Shared CLI/AXI framework for the BEHEMOTION harness."
+requires-python = ">=3.12"
+dependencies = ["typer>=0.12", "rich>=13.7", "jsonschema>=4.21"]
+
+[project.scripts]
+beheaxi = "beheaxi.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/beheaxi"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/beheaxi"]
