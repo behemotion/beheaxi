@@ -114,6 +114,8 @@ class BeheaxiApp:
             output.render_error(internal, self.ctx)
             return int(ExitCode.INTERNAL)
 
-    def _run_dashboard(self) -> int:  # replaced in Task 8
-        output.emit({"tool": self.name, "version": self.version}, self.ctx)
+    def _run_dashboard(self) -> int:
+        from . import dashboard
+
+        dashboard.render(self, self.ctx)
         return int(ExitCode.OK)
