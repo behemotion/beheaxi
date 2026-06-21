@@ -11,6 +11,11 @@ from .context import AxiContext, extract_global_flags
 from .errors import ExitCode
 from . import output
 
+try:  # click is a standalone package in older Typer, vendored under typer._click in >=0.26
+    from click.exceptions import ClickException as _ClickException
+except ModuleNotFoundError:  # pragma: no cover - depends on installed Typer packaging
+    from typer._click.exceptions import ClickException as _ClickException
+
 
 @dataclass
 class Verb:
@@ -85,6 +90,8 @@ class BeheaxiApp:
     def main(self, argv: list[str] | None = None) -> int:
         import sys
 
+        from .errors import AxiError, UsageError
+
         raw = list(sys.argv[1:]) if argv is None else list(argv)
         self.ctx, rest = extract_global_flags(raw)
         if not rest:
@@ -92,8 +99,20 @@ class BeheaxiApp:
         try:
             self._typer(args=rest, standalone_mode=False)
             return int(ExitCode.OK)
-        except SystemExit as e:  # Typer/Click usage errors (full handling added in Task 7)
-            return int(e.code) if isinstance(e.code, int) else int(ExitCode.USAGE)
+        except AxiError as e:
+            output.render_error(e, self.ctx)
+            return int(e.code)
+        except _ClickException as e:  # usage errors: Click RE-RAISES these under
+            err = UsageError(e.format_message())  # standalone_mode=False (not as SystemExit)
+            output.render_error(err, self.ctx)
+            return int(err.code)  # USAGE == 2
+        except SystemExit as e:  # --help / ctx.exit(): already-clean exits
+            return int(e.code) if isinstance(e.code, int) else int(ExitCode.OK)
+        except Exception as e:  # truly uncaught -> internal (1)
+            internal = AxiError(str(e) or "Internal error")
+            internal.type_ = "internal"
+            output.render_error(internal, self.ctx)
+            return int(ExitCode.INTERNAL)
 
     def _run_dashboard(self) -> int:  # replaced in Task 8
         output.emit({"tool": self.name, "version": self.version}, self.ctx)
