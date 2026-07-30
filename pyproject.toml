@@ -1,6 +1,6 @@
 [project]
 name = "beheaxi"
-version = "0.1.0"
+version = "0.1.1"
 description = "Shared CLI/AXI framework for the BEHEMOTION harness."
 requires-python = ">=3.12"
 dependencies = ["typer>=0.12", "rich>=13.7", "jsonschema>=4.21"]
