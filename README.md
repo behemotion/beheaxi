@@ -45,9 +45,14 @@ dashboard. Verify compliance with `beheaxi conformance "<your-tool>"`.
 
 Tools pin a tagged version; no PyPI publish needed.
 
+**Pin v0.1.1 or newer.** v0.1.0 catches only one of the two importable
+`ClickException` classes, so wherever standalone `click` is installed alongside
+Typer's vendored copy (FastMCP causes exactly that), usage errors exit 1 instead
+of 2 — and the consumer fails its own `usage_exit_2` conformance check.
+
 ```toml
 # pyproject.toml
-dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.1.0"]
+dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.1.1"]
 
 # optional local co-dev override (do not ship):
 [tool.uv.sources]
