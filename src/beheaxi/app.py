@@ -1,6 +1,7 @@
 """BeheaxiApp — the one object that auto-wires the AXI standard."""
 from __future__ import annotations
 
+import importlib
 import inspect
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -11,10 +12,31 @@ from .context import AxiContext, extract_global_flags
 from .errors import ExitCode
 from . import output
 
-try:  # click is a standalone package in older Typer, vendored under typer._click in >=0.26
-    from click.exceptions import ClickException as _ClickException  # type: ignore[import-not-found]
-except ModuleNotFoundError:  # pragma: no cover - depends on installed Typer packaging
-    from typer._click.exceptions import ClickException as _ClickException
+def _click_exception_types() -> tuple[type[BaseException], ...]:
+    """Every ClickException class that Typer might raise, in this environment.
+
+    Click is a standalone package in older Typer and vendored under
+    `typer._click` in >=0.26 — but BOTH can be importable at once, because a
+    consumer's other dependencies may pull standalone `click` in alongside a
+    vendoring Typer (FastMCP does exactly this). Importing only the first one
+    that resolves is therefore not enough: if we catch the standalone class
+    while Typer raises the vendored one, usage errors escape the handler and
+    exit 1 (internal) instead of 2 (usage), silently breaking the exit-code
+    contract and the `usage_exit_2` conformance check. Catch every variant.
+    """
+    found: list[type[BaseException]] = []
+    for module in ("typer._click.exceptions", "click.exceptions"):
+        try:
+            mod = importlib.import_module(module)
+        except ModuleNotFoundError:  # pragma: no cover - depends on packaging
+            continue
+        exc = getattr(mod, "ClickException", None)
+        if isinstance(exc, type) and issubclass(exc, BaseException) and exc not in found:
+            found.append(exc)
+    return tuple(found)
+
+
+_CLICK_EXCEPTIONS = _click_exception_types()
 
 
 @dataclass
@@ -102,8 +124,11 @@ class BeheaxiApp:
         except AxiError as e:
             output.render_error(e, self.ctx)
             return int(e.code)
-        except _ClickException as e:  # usage errors: Click RE-RAISES these under
-            err = UsageError(e.format_message())  # standalone_mode=False (not as SystemExit)
+        except _CLICK_EXCEPTIONS as e:  # usage errors: Click RE-RAISES these under
+            # `format_message` is Click's API on every ClickException variant, but the
+            # tuple above is built at runtime so mypy only knows these are BaseException.
+            message = e.format_message()  # type: ignore[attr-defined]
+            err = UsageError(message)  # standalone_mode=False (not as SystemExit)
             output.render_error(err, self.ctx)
             return int(err.code)  # USAGE == 2
         except SystemExit as e:  # --help / ctx.exit(): already-clean exits

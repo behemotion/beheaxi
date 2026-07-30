@@ -9,7 +9,7 @@ from .errors import ExitCode
 
 app = BeheaxiApp(
     name="beheaxi",
-    version="0.1.0",
+    version="0.1.1",
     summary="Shared CLI/AXI framework for the BEHEMOTION harness.",
 )
 
