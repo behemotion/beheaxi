@@ -2,7 +2,7 @@
 
 Each check takes a `run` callable — `run(args) -> (returncode, stdout, stderr)` — and returns a
 CheckResult. The checks exercise the tool's REAL shipped binary as a subprocess, the same surface
-behemcp uses, so a passing tool is AXI-compliant by the contract behemcp builds against.
+beherouter uses, so a passing tool is AXI-compliant by the contract beherouter builds against.
 """
 from __future__ import annotations
 

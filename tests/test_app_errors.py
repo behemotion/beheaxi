@@ -42,7 +42,7 @@ def test_click_exception_types_covers_every_importable_variant():
     """Regression: catching only ONE ClickException packaging breaks exit codes.
 
     Typer >=0.26 vendors Click under `typer._click`, but a consumer can have
-    standalone `click` installed alongside it (FastMCP does, so behemcp does).
+    standalone `click` installed alongside it (FastMCP does, so beherouter does).
     If we catch the standalone class while Typer raises the vendored one, usage
     errors escape the handler and exit 1 instead of 2 — which silently fails the
     `usage_exit_2` conformance check for every such consumer.
