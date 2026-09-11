@@ -52,9 +52,34 @@ of 2 — and the consumer fails its own `usage_exit_2` conformance check.
 
 ```toml
 # pyproject.toml
-dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.1.1"]
+dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.1.2"]
+```
 
-# optional local co-dev override (do not ship):
+v0.1.2 is the first release carrying `LICENSE` and `NOTICE`, which Apache 2.0
+§4(d) requires to reach downstream consumers; the exit-code fix above landed in
+v0.1.1, so the floor still holds.
+
+⚠️ **Do not ship a `[tool.uv.sources]` override.** A local co-dev override —
+
+```toml
 [tool.uv.sources]
 beheaxi = { path = "../beheaxi", editable = true }
 ```
+
+— makes `git clone && uv sync` fail for anyone without a sibling `../beheaxi`
+checkout, including your own CI. And it is **two** edits to undo, not one:
+`uv.lock` records the path independently as `source = { editable = "../beheaxi" }`,
+so removing it from `pyproject.toml` alone leaves a clean clone still broken.
+Keep such an override out of the committed tree entirely.
+
+## Attribution
+
+beheaxi is licensed under the Apache License 2.0 — see [`LICENSE`](LICENSE).
+
+Apache 2.0 §4(d) requires the attribution notices in [`NOTICE`](NOTICE) to be
+reproduced in any redistribution or derivative work, including wherever your
+product displays third-party notices.
+
+We additionally **request** — this is a request, not a licence term — that
+products built on beheaxi credit **Behemotion — https://behemotion.com** and
+**Aleksandr Mezin** in their user-facing credits or terms of service.

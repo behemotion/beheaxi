@@ -5,3 +5,9 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+
+# Internal agent/operator artifacts — never published.
+CLAUDE.md
+HANDOFF.md
+HARNESS-DIVERGENCES.md
+.claude/
