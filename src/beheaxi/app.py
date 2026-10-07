@@ -9,7 +9,7 @@ from typing import Any, Callable
 import typer
 
 from .context import AxiContext, extract_global_flags
-from .errors import ExitCode
+from .errors import AxiError, ExitCode, UsageError
 from . import output
 
 def _click_exception_types() -> tuple[type[BaseException], ...]:
@@ -56,6 +56,7 @@ class BeheaxiApp:
         self.ctx = AxiContext()
         self._verbs: list[Verb] = []
         self._status_fn: Callable[[], Any] | None = None
+        self._emitted = False
         self._typer = typer.Typer(
             add_completion=False, no_args_is_help=False, rich_markup_mode=None
         )
@@ -106,16 +107,28 @@ class BeheaxiApp:
 
     # --- output helper (read by command bodies) -----------------------------
     def emit(self, data: Any) -> None:
+        """Command output. In --json mode exactly one document may reach stdout per run.
+
+        Emitting and then raising stays legal (stdout = the result, stderr = the error):
+        beherouter's `health --deep` reports which backend died exactly that way.
+        """
+        if self.ctx.json:
+            if self._emitted:
+                raise AxiError(
+                    "emit() called more than once in --json mode",
+                    detail="--json allows exactly one JSON document on stdout; "
+                    "collect results and emit them once.",
+                )
+            self._emitted = True
         output.emit(data, self.ctx)
 
     # --- entrypoint ---------------------------------------------------------
     def main(self, argv: list[str] | None = None) -> int:
         import sys
 
-        from .errors import AxiError, UsageError
-
         raw = list(sys.argv[1:]) if argv is None else list(argv)
         self.ctx, rest = extract_global_flags(raw)
+        self._emitted = False
         if not rest:
             return int(self._run_dashboard())
         try:
