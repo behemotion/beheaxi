@@ -5,6 +5,7 @@ import functools
 import importlib
 import inspect
 import os
+import re
 import sys
 import traceback
 from dataclasses import dataclass
@@ -17,6 +18,11 @@ from .context import AxiContext, extract_global_flags
 from .errors import AxiError, ExitCode, UsageError
 
 DEBUG_ENV = "BEHEAXI_DEBUG"
+
+RESERVED_VERBS = frozenset({"describe"})
+# Lowercase words joined by single hyphens. No underscores: beherouter flattens verb names
+# to `<tool>_<verb>` MCP tools, so `read_multi` and a group `read multi` would collide.
+_VERB_NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
 
 
 def _click_classes(name: str) -> tuple[type[BaseException], ...]:
@@ -111,6 +117,7 @@ class BeheaxiApp:
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
             verb_name = name or fn.__name__.replace("_", "-")
+            self._check_verb_name(verb_name)
             summary = (inspect.getdoc(fn) or "").split("\n")[0]
             self._verbs.append(
                 Verb(
@@ -131,6 +138,18 @@ class BeheaxiApp:
             return fn
 
         return deco
+
+    def _check_verb_name(self, verb_name: str) -> None:
+        """Registration-time guard: a bad name is a programmer error, raised at import."""
+        if not _VERB_NAME.fullmatch(verb_name):
+            raise ValueError(
+                f"invalid verb name {verb_name!r}: use lowercase words joined by single "
+                "hyphens, e.g. 'registry-lint'"
+            )
+        if verb_name in RESERVED_VERBS:
+            raise ValueError(f"verb name {verb_name!r} is reserved by beheaxi")
+        if any(v.name == verb_name for v in self._verbs):
+            raise ValueError(f"verb {verb_name!r} is already registered")
 
     def status(self) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         def deco(fn: Callable[..., Any]) -> Callable[..., Any]:

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from beheaxi.app import BeheaxiApp
 from beheaxi.errors import ExitCode
 
@@ -44,3 +46,46 @@ def test_literal_flag_after_double_dash_reaches_the_verb(capsys):
 
     assert app.main(["echo", "--json", "--", "--quiet"]) == ExitCode.OK
     assert json.loads(capsys.readouterr().out) == {"word": "--quiet"}
+
+
+def _noop() -> None:
+    """No-op."""
+
+
+@pytest.mark.parametrize(
+    "bad", ["Greet", "read_multi", "-x", "x-", "a--b", "9lives", "two words"]
+)
+def test_invalid_verb_names_are_rejected(bad):
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo tool.")
+    with pytest.raises(ValueError, match="invalid verb name"):
+        app.command(name=bad)(_noop)
+
+
+def test_private_function_names_are_rejected():
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo tool.")
+
+    def _hidden() -> None:
+        """Hidden."""
+
+    with pytest.raises(ValueError, match="invalid verb name '-hidden'"):
+        app.command()(_hidden)
+
+
+def test_describe_is_reserved():
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo tool.")
+    with pytest.raises(ValueError, match="reserved"):
+        app.command(name="describe")(_noop)
+
+
+def test_duplicate_verbs_are_rejected():
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo tool.")
+    app.command(name="greet")(_noop)
+    with pytest.raises(ValueError, match="already registered"):
+        app.command(name="greet")(_noop)
+
+
+@pytest.mark.parametrize("good", ["greet", "registry-lint", "v2", "read-multi"])
+def test_valid_verb_names_are_accepted(good):
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo tool.")
+    app.command(name=good)(_noop)
+    assert app._verbs[-1].name == good
