@@ -92,6 +92,7 @@ class BeheaxiApp:
         self._verbs: list[Verb] = []
         self._status_fn: Callable[[], Any] | None = None
         self._emitted = False
+        self._in_run = False  # True only while main() is dispatching
         self._typer = typer.Typer(
             add_completion=False, no_args_is_help=False, rich_markup_mode=None
         )
@@ -155,10 +156,13 @@ class BeheaxiApp:
     def emit(self, data: Any) -> None:
         """Command output. In --json mode exactly one document may reach stdout per run.
 
+        The guard is per `main()` run; it does not apply to direct calls of verb functions
+        (e.g. in tests), where there is no run.
+
         Emitting and then raising stays legal (stdout = the result, stderr = the error):
         beherouter's `health --deep` reports which backend died exactly that way.
         """
-        if self.ctx.json:
+        if self.ctx.json and self._in_run:
             if self._emitted:
                 raise AxiError(
                     "emit() called more than once in --json mode",
@@ -173,6 +177,7 @@ class BeheaxiApp:
         raw = list(sys.argv[1:]) if argv is None else list(argv)
         self.ctx, rest = extract_global_flags(raw)
         self._emitted = False
+        self._in_run = True
         try:
             if not rest:
                 return self._run_dashboard()
@@ -201,6 +206,9 @@ class BeheaxiApp:
         except Exception as e:  # truly uncaught -> redacted internal (1)
             output.render_error(_internal_error(e), self.ctx)
             return int(ExitCode.INTERNAL)
+        finally:
+            self._in_run = False
+            self._emitted = False
 
     def _system_exit_code(self, e: SystemExit) -> int:
         """Mirror the interpreter: None -> 0, an int -> itself, anything else is printed and
