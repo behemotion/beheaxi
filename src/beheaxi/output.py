@@ -60,8 +60,13 @@ def emit(data: Any, ctx: AxiContext) -> None:
     if ctx.json:
         try:
             text = to_json(data)
-        except ValueError as e:  # NaN/Infinity, circular reference
+        except ValueError as e:  # NaN/Infinity, circular reference: messages are safe
             raise AxiError("Output is not valid JSON", detail=str(e)) from e
+        except Exception as e:  # e.g. a value whose __str__ raises: class name only
+            raise AxiError(
+                "Output is not valid JSON",
+                detail=f"{type(e).__name__} while encoding output",
+            ) from e
         sys.stdout.write(text + "\n")
         return
     if ctx.quiet:
@@ -77,7 +82,7 @@ def render_error(err: AxiError, ctx: AxiContext) -> None:
         envelope = err.envelope()
         try:
             text = to_json(envelope)
-        except ValueError:  # NaN/Infinity or a cycle in context: keep the error, drop context
+        except Exception:  # unencodable context (NaN, cycle, raising __str__): drop context
             envelope["error"].pop("context", None)
             text = to_json(envelope)
         sys.stderr.write(text + "\n")
