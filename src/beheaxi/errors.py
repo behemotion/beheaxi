@@ -15,6 +15,11 @@ class ExitCode(IntEnum):
     UNAVAILABLE = 6
 
 
+# beheaxi owns exit codes 0-9 (ExitCode uses 0-6; 7-9 are held for future framework
+# classes). A tool's own domain codes start here — CONVENTIONS.md §2.
+DOMAIN_EXIT_FLOOR = 10
+
+
 class AxiError(Exception):
     """Base error. Subclasses set `code` and `type_`; carries problem+json fields."""
 
