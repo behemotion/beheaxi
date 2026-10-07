@@ -14,7 +14,7 @@ from typing import Any, Callable, Protocol
 
 import jsonschema
 
-ANSI = re.compile(r"\x1b\[")
+ESC = re.compile("\x1b")  # any escape byte: CSI colours and OSC titles/hyperlinks alike
 SCHEMA = json.loads((Path(__file__).resolve().parents[1] / "manifest_schema.json").read_text())
 BOGUS = "definitely-not-a-command"
 
@@ -22,6 +22,10 @@ BOGUS = "definitely-not-a-command"
 class Runner(Protocol):
     def run(self, args: list[str]) -> tuple[int, str, str]:
         """(returncode, stdout, stderr), with stdout/stderr piped."""
+        ...
+
+    def run_tty(self, args: list[str]) -> tuple[int, str] | None:
+        """(returncode, combined output) on a pseudo-terminal; None where unsupported."""
         ...
 
 
@@ -70,9 +74,16 @@ def json_parseable(tool: Runner) -> CheckResult:
 
 
 def no_color(tool: Runner) -> CheckResult:
-    _, out, _ = tool.run(["--no-color", "describe"])
-    has_ansi = bool(ANSI.search(out))
-    return CheckResult("no_color", not has_ansi, "ANSI present" if has_ansi else "")
+    """--no-color must yield zero escape bytes, piped AND on a real TTY: the TTY is where
+    colour actually switches on (and where Rich's own no_color still emits bold)."""
+    for args in (["--no-color"], ["--no-color", "describe"]):
+        _, out, err = tool.run(args)
+        if ESC.search(out) or ESC.search(err):
+            return CheckResult("no_color", False, f"escape codes in piped output of {args}")
+        tty = tool.run_tty(args)
+        if tty is not None and ESC.search(tty[1]):
+            return CheckResult("no_color", False, f"escape codes on a TTY with {args}")
+    return CheckResult("no_color", True)
 
 
 def usage_exit_2(tool: Runner) -> CheckResult:
@@ -85,6 +96,22 @@ def dashboard(tool: Runner) -> CheckResult:
     return CheckResult("dashboard", code == 0 and out.strip() != "", f"exit {code}")
 
 
+def json_error_envelope(tool: Runner) -> CheckResult:
+    """In --json mode an error leaves stdout empty and puts one envelope on stderr whose
+    `code` equals the exit code."""
+    name = "json_error_envelope"
+    code, out, err = tool.run(["--json", BOGUS])
+    if out.strip():
+        return CheckResult(name, False, "stdout not empty on error")
+    try:
+        body: Any = json.loads(err)["error"]
+    except (ValueError, KeyError, TypeError):
+        return CheckResult(name, False, "stderr is not a JSON error envelope")
+    if not isinstance(body, dict) or body.get("type") != "usage" or body.get("code") != code:
+        return CheckResult(name, False, f"envelope {body!r:.100} does not match exit {code}")
+    return CheckResult(name, True)
+
+
 ALL_CHECKS: list[Callable[[Runner], CheckResult]] = [
     describe_schema,
     pinned_verbs,
@@ -92,4 +119,5 @@ ALL_CHECKS: list[Callable[[Runner], CheckResult]] = [
     no_color,
     usage_exit_2,
     dashboard,
+    json_error_envelope,
 ]
