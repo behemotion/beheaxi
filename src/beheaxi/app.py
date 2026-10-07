@@ -216,8 +216,15 @@ class BeheaxiApp:
         if e.code is None:
             return int(ExitCode.OK)
         if isinstance(e.code, int):
-            return e.code
-        failure = AxiError(str(e.code))
+            return int(e.code)
+        if isinstance(e.code, str):
+            failure = AxiError(e.code)  # author-written message
+        elif isinstance(e.code, BaseException):
+            failure = _internal_error(e.code)
+        else:
+            failure = AxiError(
+                "Internal error", detail=f"{type(e.code).__name__} passed to sys.exit"
+            )
         output.render_error(failure, self.ctx)
         return int(failure.code)
 
