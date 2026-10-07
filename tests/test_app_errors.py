@@ -249,3 +249,63 @@ def test_nan_in_status_state_is_an_internal_envelope(capsys):
     cap = capsys.readouterr()
     assert cap.out == ""
     assert json.loads(cap.err)["error"]["title"] == "Output is not valid JSON"
+
+
+class _Bad:
+    def __str__(self):
+        raise RuntimeError("postgres://u:hunter2@h")
+
+
+def _leak_app():
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
+
+    @app.command()
+    def bad_context():
+        """Raise with an unstringifiable context value."""
+        from beheaxi.errors import AxiError
+
+        raise AxiError("t", context={"k": _Bad()})
+
+    @app.command()
+    def bad_emit():
+        """Emit an unstringifiable value."""
+        app.emit({"k": _Bad()})
+
+    @app.command()
+    def exit_obj():
+        """sys.exit with an exception object."""
+        try:
+            raise RuntimeError("postgres://u:hunter2@h")
+        except Exception as e:
+            sys.exit(e)
+
+    return app
+
+
+def test_unstringifiable_context_keeps_envelope_without_leak(capsys):
+    from beheaxi.errors import AxiError
+
+    code = _leak_app().main(["bad-context", "--json"])
+    err = capsys.readouterr().err
+    assert code == AxiError("t").code
+    doc = json.loads(err)
+    assert doc["error"]["title"] == "t"
+    assert "context" not in doc["error"]
+    assert "hunter2" not in err
+
+
+def test_unstringifiable_emit_does_not_leak(capsys):
+    code = _leak_app().main(["bad-emit", "--json"])
+    cap = capsys.readouterr()
+    assert code == ExitCode.INTERNAL
+    assert cap.out == ""
+    assert "hunter2" not in cap.err
+    assert json.loads(cap.err)["error"]["title"] == "Output is not valid JSON"
+
+
+def test_sys_exit_with_exception_object_does_not_leak(capsys):
+    code = _leak_app().main(["exit-obj", "--json"])
+    err = capsys.readouterr().err
+    assert code == ExitCode.INTERNAL
+    assert json.loads(err)["error"]["title"] == "Internal error"
+    assert "hunter2" not in err
