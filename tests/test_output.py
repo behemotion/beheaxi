@@ -1,8 +1,11 @@
 import json
+from pathlib import Path
+
+import pytest
 
 from beheaxi.context import AxiContext
 from beheaxi.output import emit, make_console, render_error, sanitize
-from beheaxi.errors import NotFound
+from beheaxi.errors import NotFound, AxiError
 
 
 def test_emit_json_mode_is_parseable(capsys):
@@ -52,3 +55,28 @@ def test_sanitize_keeps_tabs_newlines_and_unicode():
 def test_no_color_console_emits_no_escapes_at_all():
     # Rich's no_color=True still emits bold/dim on a TTY; color_system=None emits nothing.
     assert make_console(AxiContext(no_color=True)).color_system is None
+
+
+def test_non_serializable_context_still_renders_an_envelope(capsys):
+    render_error(
+        NotFound("x", context={"obj": object(), "path": Path("/tmp/a")}), AxiContext(json=True)
+    )
+    err = json.loads(capsys.readouterr().err)["error"]
+    assert err["type"] == "not_found" and err["context"]["path"] == "/tmp/a"
+
+
+def test_nan_context_is_dropped_but_the_error_survives(capsys):
+    render_error(NotFound("x", context={"v": float("nan")}), AxiContext(json=True))
+    err = json.loads(capsys.readouterr().err)["error"]
+    assert err["title"] == "x" and "context" not in err
+
+
+def test_emit_serializes_paths_as_strings(capsys):
+    emit({"p": Path("/tmp/a")}, AxiContext(json=True))
+    assert json.loads(capsys.readouterr().out) == {"p": "/tmp/a"}
+
+
+def test_emit_rejects_nan_with_an_axi_error(capsys):
+    with pytest.raises(AxiError, match="not valid JSON"):
+        emit({"v": float("nan")}, AxiContext(json=True))
+    assert capsys.readouterr().out == ""

@@ -45,10 +45,24 @@ def make_console(ctx: AxiContext, *, stderr: bool = False) -> Console:
     )
 
 
+def to_json(data: Any) -> str:
+    """The one JSON encoder for stdout/stderr.
+
+    Values json cannot encode natively (Path, datetime, UUID, ...) become strings. NaN and
+    Infinity raise ValueError: they are not JSON, and strict parsers on the agent side reject
+    the whole document.
+    """
+    return json.dumps(data, default=str, allow_nan=False)
+
+
 def emit(data: Any, ctx: AxiContext) -> None:
     """Primary success output. One JSON doc to stdout in --json mode, else Rich."""
     if ctx.json:
-        sys.stdout.write(json.dumps(data) + "\n")
+        try:
+            text = to_json(data)
+        except ValueError as e:  # NaN/Infinity, circular reference
+            raise AxiError("Output is not valid JSON", detail=str(e)) from e
+        sys.stdout.write(text + "\n")
         return
     if ctx.quiet:
         return
@@ -60,7 +74,13 @@ def emit(data: Any, ctx: AxiContext) -> None:
 def render_error(err: AxiError, ctx: AxiContext) -> None:
     """Error output → always stderr. JSON envelope in --json mode, else Rich."""
     if ctx.json:
-        sys.stderr.write(json.dumps(err.envelope()) + "\n")
+        envelope = err.envelope()
+        try:
+            text = to_json(envelope)
+        except ValueError:  # NaN/Infinity or a cycle in context: keep the error, drop context
+            envelope["error"].pop("context", None)
+            text = to_json(envelope)
+        sys.stderr.write(text + "\n")
         return
     con = make_console(ctx, stderr=True)
     con.print(Text.assemble(("error:", "red"), " ", safe_text(err.title)))
