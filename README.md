@@ -52,7 +52,7 @@ of 2 — and the consumer fails its own `usage_exit_2` conformance check.
 
 ```toml
 # pyproject.toml
-dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.2.0"]
+dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.2.1"]
 ```
 
 v0.1.2 is the first release carrying `LICENSE` and `NOTICE`, which Apache 2.0
@@ -81,7 +81,25 @@ Things you may notice:
   probes a real TTY), exits **10** when checks fail, and strips credential-named env vars from
   the target (`--inherit-env` opts out).
 - **Domain exit codes** start at `beheaxi.DOMAIN_EXIT_FLOOR` (10); 0–9 belong to beheaxi.
-- **typer ≥ 0.16.0 is required.** The old `typer>=0.12` floor was false (0.12.x with current click breaks every boolean flag), and 0.13–0.15 mis-parse custom option declarations; CI now tests the declared floors.
+- **typer ≥ 0.16.0 is required.** The old `typer>=0.12` floor was false (0.12.x with current
+  click breaks every boolean flag), and 0.13–0.15 mis-parse custom option declarations; CI now
+  tests the declared floors.
+
+### 0.2.1
+
+A patch release; no contract changes.
+
+- **typer 0.27 support.** typer 0.27 moved `Exit`/`Abort` into `typer.exceptions`; 0.2.0 missed
+  them there, so `typer.Abort` reported "Internal error" instead of "Aborted".
+- **`typer.Exit(n)` in a `status()` hook** exits `n` instead of 1.
+- **`ctx: typer.Context`** is no longer listed as a manifest arg, and
+  `typer.Option(default_factory=...)` counts as optional rather than a rejected required option.
+- **Human `emit()`** strips control and bidi characters from every rendered value, including a
+  custom `__repr__` inside a container.
+- **`beheaxi conformance`** also strips `*PASSPHRASE*`, `*COOKIE*`, `*SESSION*`, `*DSN*` and
+  database/broker URL variables (`DATABASE_URL`, `REDIS_URL`, `MONGODB_URI`, …; a plain `*_URL`
+  is kept). It no longer hangs on a target that closes the pty but keeps running, and reports
+  non-UTF-8 output instead of crashing the check.
 
 Tags are mutable; for byte-for-byte reproducible builds rely on your `uv.lock`, which records
 the resolved commit SHA of the git dependency.
