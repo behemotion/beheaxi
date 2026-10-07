@@ -4,9 +4,13 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Iterator
 from typing import Any
 
-from rich.console import Console
+from rich.console import Console, ConsoleOptions
+from rich.pretty import Pretty
+from rich.protocol import is_renderable, rich_cast
+from rich.segment import Segment
 from rich.text import Text
 
 from .context import AxiContext
@@ -16,7 +20,7 @@ from .errors import AxiError
 # (ESC starts CSI/OSC sequences — title rewrites, OSC 8 hyperlinks, cursor moves; \r
 # overwrites the visible line), DEL, C1 controls, and the bidi overrides/isolates that
 # reorder what the reader sees (CVE-2021-42574).
-_UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f‪-‮⁦-⁩]")
+_UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
 
 
 def sanitize(text: str) -> str:
@@ -27,6 +31,24 @@ def sanitize(text: str) -> str:
 def safe_text(value: Any, style: str = "") -> Text:
     """Untrusted value -> Rich Text: never parsed as markup, control characters removed."""
     return Text(sanitize(str(value)), style=style)
+
+
+class _Sanitized:
+    """Wraps any renderable and strips unsafe characters from the text it renders to.
+
+    Rich's Pretty escapes control characters only in the reprs it builds itself; a custom
+    `__repr__` inside a container is copied verbatim, ESC and bidi overrides included.
+    Filtering the rendered segments covers every renderable whatever produced the text.
+    Control segments are Rich's own cursor/style codes, not caller text, and pass through.
+    """
+
+    def __init__(self, data: Any) -> None:
+        cast = rich_cast(data)  # the same promotion Console.print applies
+        self.renderable = cast if is_renderable(cast) else Pretty(cast)
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> Iterator[Segment]:
+        for seg in console.render(self.renderable, options):
+            yield seg if seg.control else seg._replace(text=sanitize(seg.text))
 
 
 def make_console(ctx: AxiContext, *, stderr: bool = False) -> Console:
@@ -71,9 +93,9 @@ def emit(data: Any, ctx: AxiContext) -> None:
         return
     if ctx.quiet:
         return
-    # Strings are sanitized; containers go through Rich's Pretty, whose repr() already
-    # escapes control characters.
-    make_console(ctx).print(safe_text(data) if isinstance(data, str) else data)
+    # Strings become literal Text; everything else (containers -> Pretty) is sanitized
+    # after rendering, because Pretty copies a custom __repr__ verbatim.
+    make_console(ctx).print(safe_text(data) if isinstance(data, str) else _Sanitized(data))
 
 
 def render_error(err: AxiError, ctx: AxiContext) -> None:
@@ -82,7 +104,7 @@ def render_error(err: AxiError, ctx: AxiContext) -> None:
         envelope = err.envelope()
         try:
             text = to_json(envelope)
-        except Exception:  # unencodable context (NaN, cycle, raising __str__): drop context
+        except Exception:  # noqa: BLE001 - unencodable context (NaN, cycle, raising __str__)
             envelope["error"].pop("context", None)
             text = to_json(envelope)
         sys.stderr.write(text + "\n")

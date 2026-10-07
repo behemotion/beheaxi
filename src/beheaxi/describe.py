@@ -6,12 +6,14 @@ lies to beherouter.
 """
 from __future__ import annotations
 
+import importlib
 import inspect
 import types
 import typing
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, get_args, get_origin
+from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 from typer.models import ArgumentInfo, ParameterInfo
 
@@ -26,6 +28,31 @@ _SCALARS: dict[Any, str] = {
     Path: "string",
 }
 _ARRAYS = (list, tuple, set, frozenset)
+
+
+def _context_classes() -> tuple[type, ...]:
+    """Every importable Click `Context` base (vendored in Typer >= 0.26, and/or standalone).
+
+    Typer injects a parameter annotated with one of these; it is not a CLI argument.
+    `typer.Context` subclasses the vendored one, so issubclass() covers it too.
+    """
+    found: list[type] = []
+    for module in ("typer._click.core", "click.core"):
+        try:
+            cls = getattr(importlib.import_module(module), "Context", None)
+        except ModuleNotFoundError:  # pragma: no cover - depends on packaging
+            continue
+        if isinstance(cls, type) and cls not in found:
+            found.append(cls)
+    return tuple(found)
+
+
+_CONTEXTS = _context_classes()
+
+
+def _is_context(hint: Any) -> bool:
+    annotation, _ = _unwrap(hint)
+    return isinstance(annotation, type) and issubclass(annotation, _CONTEXTS)
 
 
 def _unwrap(annotation: Any) -> tuple[Any, ParameterInfo | None]:
@@ -78,6 +105,8 @@ def arg_entry(param: inspect.Parameter, hint: Any) -> dict[str, Any]:
         if isinstance(info.default, str):
             decls = (info.default, *decls)
     required = default is inspect.Parameter.empty or default is ...
+    if getattr(info, "default_factory", None) is not None:  # Option(default_factory=...)
+        required = False
     positional = isinstance(info, ArgumentInfo) or (info is None and required)
     if positional != required:
         shape = "a required option" if required else "an optional positional argument"
@@ -95,12 +124,16 @@ def arg_entry(param: inspect.Parameter, hint: Any) -> dict[str, Any]:
 
 
 def arg_entries(fn: Callable[..., Any]) -> list[dict[str, Any]]:
-    """Manifest arg entries for a verb function, in signature order."""
+    """Manifest arg entries for a verb function, in signature order.
+
+    A `ctx: typer.Context` parameter is injected by Typer, not passed on the command line,
+    so it is not an arg.
+    """
     try:
         # Resolves string annotations: under `from __future__ import annotations` (used
         # across the harness) every annotation is a str that _type_of cannot map.
         hints = typing.get_type_hints(fn, include_extras=True)
-    except Exception as e:  # noqa: BLE001 - NameError/TypeError from unresolvable refs
+    except Exception as e:  # NameError/TypeError from unresolvable refs: re-raised
         raise ValueError(
             f"cannot resolve the annotations of verb function {fn.__name__!r}: {e}. "
             "Define referenced types before the verb."
@@ -108,7 +141,7 @@ def arg_entries(fn: Callable[..., Any]) -> list[dict[str, Any]]:
     return [
         arg_entry(p, hints.get(p.name, p.annotation))
         for p in inspect.signature(fn).parameters.values()
-        if p.name != "self"
+        if p.name != "self" and not _is_context(hints.get(p.name, p.annotation))
     ]
 
 

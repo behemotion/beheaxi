@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from beheaxi.context import AxiContext
+from beheaxi.errors import AxiError, NotFound
 from beheaxi.output import emit, make_console, render_error, sanitize
-from beheaxi.errors import NotFound, AxiError
 
 
 def test_emit_json_mode_is_parseable(capsys):
@@ -44,7 +44,7 @@ def test_human_error_is_not_parsed_as_markup(capsys):
 
 def test_human_emit_strips_terminal_controls(capsys):
     # OSC 0 title rewrite, CSI colour, carriage return, RTL override (CVE-2021-42574)
-    emit("a\x1b]0;pwned\x07b\x1b[31mc\rd‮e", AxiContext())
+    emit("a\x1b]0;pwned\x07b\x1b[31mc\rd\u202ee", AxiContext())
     assert capsys.readouterr().out.strip() == "a]0;pwnedb[31mcde"
 
 
@@ -80,3 +80,22 @@ def test_emit_rejects_nan_with_an_axi_error(capsys):
     with pytest.raises(AxiError, match="not valid JSON"):
         emit({"v": float("nan")}, AxiContext(json=True))
     assert capsys.readouterr().out == ""
+
+
+class _EvilRepr:
+    """A custom __repr__ (which Rich's Pretty copies verbatim) carrying controls."""
+
+    def __repr__(self) -> str:
+        return "x\u202ey\x1b]0;pwned\x07z"
+
+
+def test_human_emit_sanitizes_custom_reprs_inside_containers(capsys):
+    emit({"k": [_EvilRepr()]}, AxiContext())
+    out = capsys.readouterr().out
+    assert "\u202e" not in out and "\x1b" not in out and "\x07" not in out
+    assert "xy" in out and "pwnedz" in out  # the printable text survives
+
+
+def test_sanitize_strips_every_bidi_override_and_isolate():
+    bidi = "".join(map(chr, [*range(0x202A, 0x202F), *range(0x2066, 0x206A)]))
+    assert sanitize(f"a{bidi}b") == "ab"

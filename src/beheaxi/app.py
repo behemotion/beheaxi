@@ -8,8 +8,9 @@ import os
 import re
 import sys
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import typer
 
@@ -37,9 +38,11 @@ def _click_classes(name: str) -> tuple[type[BaseException], ...]:
     while Typer raises the vendored one, usage errors escape the handler and
     exit 1 (internal) instead of 2 (usage), silently breaking the exit-code
     contract and the `usage_exit_2` conformance check. Catch every variant.
+
+    Typer >= 0.27 also moved `Exit` and `Abort` out of `_click` into `typer.exceptions`.
     """
     found: list[type[BaseException]] = []
-    for module in ("typer._click.exceptions", "click.exceptions"):
+    for module in ("typer.exceptions", "typer._click.exceptions", "click.exceptions"):
         try:
             mod = importlib.import_module(module)
         except ModuleNotFoundError:  # pragma: no cover - depends on packaging
@@ -58,6 +61,9 @@ _CLICK_EXCEPTIONS = _click_exception_types()
 # Click converts Ctrl-C/EOF inside a verb (and a declined confirm(abort=True)) into Abort,
 # which is a RuntimeError, not a ClickException.
 _CLICK_ABORTS = _click_classes("Abort")
+# Exit (`typer.Exit(n)`) is a RuntimeError too. Click turns it into a return code while it
+# runs a verb, but no Click runs on the dashboard path, so a status() hook's Exit lands here.
+_CLICK_EXITS = _click_classes("Exit")
 
 
 def _internal_error(exc: BaseException) -> AxiError:
@@ -201,9 +207,11 @@ class BeheaxiApp:
             aborted = AxiError("Aborted")
             output.render_error(aborted, self.ctx)
             return int(aborted.code)
+        except _CLICK_EXITS as e:
+            return int(e.exit_code)  # type: ignore[attr-defined]
         except SystemExit as e:  # --help / ctx.exit() / sys.exit() inside a verb
             return self._system_exit_code(e)
-        except Exception as e:  # truly uncaught -> redacted internal (1)
+        except Exception as e:  # noqa: BLE001 - truly uncaught -> redacted internal (1)
             output.render_error(_internal_error(e), self.ctx)
             return int(ExitCode.INTERNAL)
         finally:

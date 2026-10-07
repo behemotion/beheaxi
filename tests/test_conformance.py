@@ -100,11 +100,33 @@ def test_inherit_env_passes_the_environment_through(monkeypatch):
 @pytest.mark.parametrize(
     "name",
     ["GITHUB_TOKEN", "BEHELIB_API_KEY", "db_password", "AWS_SECRET_ACCESS_KEY",
-     "BEARER", "SSH_AUTH_SOCK", "BEHEROUTER_PRIVATE_KEY", "OAUTH_CLIENT_CREDENTIALS"],
+     "BEARER", "SSH_AUTH_SOCK", "BEHEROUTER_PRIVATE_KEY", "OAUTH_CLIENT_CREDENTIALS",
+     "GPG_PASSPHRASE", "SITE_COOKIE", "FLASK_SESSION_KEY", "SENTRY_DSN", "DATABASE_URL",
+     "BEHELIB_DB_URL", "REDIS_URL", "CELERY_BROKER_URL", "AMQP_URL", "MONGODB_URI",
+     "POSTGRES_URL", "MYSQL_URL"],
 )
 def test_secretish_names_are_scrubbed(name):
     env = scrubbed_env({name: "x", "PATH": "/bin", "HOME": "/h"})
     assert name not in env and env == {"PATH": "/bin", "HOME": "/h"}
+
+
+@pytest.mark.parametrize("name", ["API_BASE_URL", "BEHEROUTER_URL", "HOMEPAGE_URL", "LANG"])
+def test_plain_endpoint_urls_are_kept(name):
+    """Only credential-carrying URL names are stripped: a dashboard may need its endpoint."""
+    assert name in scrubbed_env({name: "x"})
+
+
+def test_inherit_env_reaches_the_tool_and_scrubbing_does_not(monkeypatch):
+    probe = [sys.executable, "-c", "import os; print(os.environ.get('BEHELIB_API_TOKEN', '-'))"]
+    monkeypatch.setenv("BEHELIB_API_TOKEN", "s3cret")
+    assert ToolRunner(probe, env=None).run([])[1].strip() == "s3cret"
+    assert ToolRunner(probe, env=scrubbed_env(os.environ)).run([])[1].strip() == "-"
+
+
+def test_non_utf8_output_is_a_result_not_a_crash():
+    tool = ToolRunner([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'a\\xffb')"])
+    code, out, _ = tool.run([])
+    assert code == 0 and out == "a\ufffdb"
 
 
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="needs a pseudo-terminal")
@@ -134,3 +156,26 @@ def test_beheaxi_apps_are_escape_free_on_a_tty():
     # ...and the pty is real: without the flag the same dashboard IS styled.
     plain = tool.run_tty([])
     assert plain is not None and "\x1b[" in plain[1]
+
+
+@POSIX_ONLY
+def test_a_non_executable_target_exits_126(tmp_path):
+    script = tmp_path / "tool"
+    script.write_text("#!/bin/sh\necho hi\n")
+    script.chmod(0o644)
+    tool = ToolRunner([str(script)])
+    assert tool.run([])[0] == 126
+    assert tool.run_tty([])[0] == 126
+
+
+@POSIX_ONLY
+def test_run_tty_bounds_the_final_wait():
+    """A child that closes the pty but keeps running must not hang the run."""
+    import time
+
+    code = "import os, time; os.close(1); os.close(2); time.sleep(30)"
+    tool = ToolRunner([sys.executable, "-c", code], timeout=1.0)
+    start = time.monotonic()
+    result = tool.run_tty([])
+    assert time.monotonic() - start < 10
+    assert result is not None and result[0] == 124

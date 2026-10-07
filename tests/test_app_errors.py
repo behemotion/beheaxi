@@ -5,7 +5,7 @@ import typer
 
 from beheaxi.app import BeheaxiApp
 from beheaxi.dashboard import Status
-from beheaxi.errors import NotFound, ExitCode, Unavailable
+from beheaxi.errors import ExitCode, NotFound, Unavailable
 
 
 def make_app():
@@ -276,7 +276,7 @@ def _leak_app():
         """sys.exit with an exception object."""
         try:
             raise RuntimeError("postgres://u:hunter2@h")
-        except Exception as e:
+        except RuntimeError as e:
             sys.exit(e)
 
     return app
@@ -309,3 +309,42 @@ def test_sys_exit_with_exception_object_does_not_leak(capsys):
     assert code == ExitCode.INTERNAL
     assert json.loads(err)["error"]["title"] == "Internal error"
     assert "hunter2" not in err
+
+
+def _status_exit_app(code: int) -> BeheaxiApp:
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
+
+    @app.status()
+    def status() -> Status:
+        raise typer.Exit(code=code)
+
+    return app
+
+
+def test_typer_exit_in_a_status_hook_is_its_exit_code(capsys):
+    """No Click runs on the dashboard path, so main() must honour Exit itself."""
+    assert _status_exit_app(3).main([]) == 3
+    assert _status_exit_app(0).main(["--json"]) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_every_exit_variant_is_honoured_on_the_dashboard_path():
+    from beheaxi.app import _click_classes
+
+    for exit_cls in _click_classes("Exit"):
+        app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
+
+        @app.status()
+        def status() -> Status:
+            raise exit_cls(4)  # noqa: B023 - called within this iteration
+
+        assert app.main([]) == 4, exit_cls
+
+
+def test_typers_own_exit_and_abort_are_caught():
+    """Regression: typer 0.27 moved Exit/Abort out of `_click.exceptions` into
+    `typer.exceptions`, which silently emptied both tuples (`except ():` catches nothing)."""
+    from beheaxi.app import _CLICK_ABORTS, _CLICK_EXITS
+
+    assert typer.Abort in _CLICK_ABORTS
+    assert typer.Exit in _CLICK_EXITS

@@ -13,7 +13,7 @@ def make_app():
     app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
 
     @app.command(pinned=True, mutating=False)
-    def search(query: str, shelf: str = None, top: int = 5):
+    def search(query: str, shelf: str | None = None, top: int = 5):
         """Search things."""
         app.emit([])
 
