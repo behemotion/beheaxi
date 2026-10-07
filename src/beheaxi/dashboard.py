@@ -6,10 +6,11 @@ import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from rich.console import Console
+from rich.text import Text
 from rich.table import Table
 
 from .context import AxiContext
+from .output import make_console, safe_text
 
 if TYPE_CHECKING:
     from .app import BeheaxiApp
@@ -35,18 +36,20 @@ def render(app: BeheaxiApp, ctx: AxiContext) -> None:
         }
         sys.stdout.write(json.dumps(payload) + "\n")
         return
-    con = Console(no_color=ctx.no_color, highlight=False)
-    con.print(f"[bold]{app.name}[/bold] {app.version} — {app.summary}")
+    con = make_console(ctx)
+    con.print(
+        Text.assemble(safe_text(app.name, "bold"), " ", safe_text(f"{app.version} — {app.summary}"))
+    )
     if status and status.state:
         t = Table(show_header=False, box=None)
         for k, val in status.state.items():
-            t.add_row(str(k), str(val))
+            t.add_row(safe_text(k), safe_text(val))
         con.print(t)
     if status and status.suggest:
-        con.print("\n[bold]Next:[/bold]")
+        con.print(Text.assemble("\n", ("Next:", "bold")))
         for s in status.suggest:
-            con.print(f"  {s}")
-    con.print("\n[bold]Commands:[/bold]")
+            con.print(Text.assemble("  ", safe_text(s)))
+    con.print(Text.assemble("\n", ("Commands:", "bold")))
     for v in verbs:
         mark = "*" if v["pinned"] else " "
-        con.print(f"  {mark} {v['name']:<16} {v['summary']}")
+        con.print(safe_text(f"  {mark} {v['name']:<16} {v['summary']}"))

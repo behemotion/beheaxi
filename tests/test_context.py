@@ -1,3 +1,5 @@
+import sys
+
 from beheaxi.context import AxiContext, extract_global_flags
 
 
@@ -26,3 +28,15 @@ def test_no_color_forced_when_not_tty(monkeypatch):
     monkeypatch.setattr("sys.stdout.isatty", lambda: False)
     ctx, _ = extract_global_flags(["describe"])
     assert ctx.no_color is True
+
+
+def test_no_color_env_var_disables_color_on_a_tty(monkeypatch):
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert extract_global_flags([])[0].no_color is True
+
+
+def test_tty_without_no_color_keeps_color(monkeypatch):
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert extract_global_flags([])[0].no_color is False

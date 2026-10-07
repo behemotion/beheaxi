@@ -40,3 +40,16 @@ def test_dashboard_json_mode_is_structured(capsys):
     make_app().main(["--json"])
     data = json.loads(capsys.readouterr().out)
     assert data["tool"] == "demo" and "verbs" in data and data["state"]["shelves"] == 3
+
+
+def test_dashboard_renders_untrusted_state_literally(capsys):
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo tool.")
+
+    @app.status()
+    def status() -> Status:
+        return Status(state={"note": "[red]x[/red]\x1b[2J"}, suggest=["run [bold]y[/bold]"])
+
+    assert app.main([]) == 0
+    out = capsys.readouterr().out
+    assert "[red]x[/red]" in out and "run [bold]y[/bold]" in out
+    assert "\x1b" not in out

@@ -1,6 +1,7 @@
 """Run-mode context and argv-level global-flag extraction (placement-independent)."""
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 
@@ -31,6 +32,7 @@ def extract_global_flags(argv: list[str]) -> tuple[AxiContext, list[str]]:
             ctx.no_color = True
         else:
             rest.append(tok)
-    if not sys.stdout.isatty():
+    # NO_COLOR (https://no-color.org): any non-empty value means no colour, like --no-color.
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
         ctx.no_color = True
     return ctx, rest
