@@ -130,6 +130,26 @@ def test_emit_guard_resets_between_runs(capsys):
     assert app.main(["emit-then-raise", "--json"]) == ExitCode.UNAVAILABLE
 
 
+def test_direct_verb_calls_after_a_json_run_are_not_guarded(capsys):
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
+
+    @app.command()
+    def emit_then_raise() -> None:
+        """Emits then raises."""
+        app.emit({"ok": False})
+        raise Unavailable("backend down")
+
+    @app.command()
+    def once() -> None:
+        """Emits once."""
+        app.emit({"a": 1})
+
+    assert app.main(["emit-then-raise", "--json"]) == ExitCode.UNAVAILABLE
+    capsys.readouterr()
+    once()
+    once()  # no run in progress: no guard, neither call raises
+
+
 def make_exits_app():
     app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
 
