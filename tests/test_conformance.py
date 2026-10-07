@@ -1,3 +1,4 @@
+import os
 import sys
 
 import pytest
@@ -24,7 +25,7 @@ def test_compliant_app_passes():
     assert report.ok, report.failures
     assert {c.name for c in report.checks} >= {
         "describe_schema", "pinned_verbs", "json_parseable", "no_color",
-        "usage_exit_2", "dashboard",
+        "usage_exit_2", "dashboard", "json_error_envelope",
     }
 
 
@@ -104,3 +105,32 @@ def test_inherit_env_passes_the_environment_through(monkeypatch):
 def test_secretish_names_are_scrubbed(name):
     env = scrubbed_env({name: "x", "PATH": "/bin", "HOME": "/h"})
     assert name not in env and env == {"PATH": "/bin", "HOME": "/h"}
+
+
+POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="needs a pseudo-terminal")
+
+
+@POSIX_ONLY
+def test_colour_on_a_real_tty_is_caught(monkeypatch):
+    report = run_fake(monkeypatch, "colorful")
+    assert failed(report) == {"no_color"}
+    assert "TTY" in report.failures[0].detail
+
+
+def test_plain_text_usage_errors_fail_the_envelope_check(monkeypatch):
+    report = run_fake(monkeypatch, "plain_error")
+    assert failed(report) == {"json_error_envelope"}
+
+
+@POSIX_ONLY
+def test_beheaxi_apps_are_escape_free_on_a_tty():
+    env = {k: v for k, v in os.environ.items() if k not in ("NO_COLOR", "FORCE_COLOR")}
+    tool = ToolRunner(EXAMPLE, env={**env, "TERM": "xterm-256color"})
+    for args in (["--no-color"], ["--no-color", "describe"]):
+        result = tool.run_tty(args)
+        assert result is not None
+        code, out = result
+        assert code == 0 and out.strip() and "\x1b" not in out
+    # ...and the pty is real: without the flag the same dashboard IS styled.
+    plain = tool.run_tty([])
+    assert plain is not None and "\x1b[" in plain[1]
