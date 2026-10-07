@@ -2,17 +2,47 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from typing import Any
 
 from rich.console import Console
+from rich.text import Text
 
 from .context import AxiContext
 from .errors import AxiError
 
+# Stripped from every string rendered for a human terminal: C0 controls except \t and \n
+# (ESC starts CSI/OSC sequences — title rewrites, OSC 8 hyperlinks, cursor moves; \r
+# overwrites the visible line), DEL, C1 controls, and the bidi overrides/isolates that
+# reorder what the reader sees (CVE-2021-42574).
+_UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f‪-‮⁦-⁩]")
 
-def _console(ctx: AxiContext, *, stderr: bool = False) -> Console:
-    return Console(no_color=ctx.no_color, stderr=stderr, highlight=False)
+
+def sanitize(text: str) -> str:
+    """Remove terminal-control and bidi characters from text bound for a human terminal."""
+    return _UNSAFE.sub("", text)
+
+
+def safe_text(value: Any, style: str = "") -> Text:
+    """Untrusted value -> Rich Text: never parsed as markup, control characters removed."""
+    return Text(sanitize(str(value)), style=style)
+
+
+def make_console(ctx: AxiContext, *, stderr: bool = False) -> Console:
+    """The one Console factory.
+
+    markup/emoji are off: framework styling is built from Text objects, so no caller-supplied
+    string is ever interpreted. Under --no-color, color_system=None rather than
+    no_color=True: Rich's no_color drops colours but still emits bold/dim escapes on a TTY.
+    """
+    return Console(
+        color_system=None if ctx.no_color else "auto",
+        stderr=stderr,
+        highlight=False,
+        markup=False,
+        emoji=False,
+    )
 
 
 def emit(data: Any, ctx: AxiContext) -> None:
@@ -22,7 +52,9 @@ def emit(data: Any, ctx: AxiContext) -> None:
         return
     if ctx.quiet:
         return
-    _console(ctx).print(data)
+    # Strings are sanitized; containers go through Rich's Pretty, whose repr() already
+    # escapes control characters.
+    make_console(ctx).print(safe_text(data) if isinstance(data, str) else data)
 
 
 def render_error(err: AxiError, ctx: AxiContext) -> None:
@@ -30,7 +62,7 @@ def render_error(err: AxiError, ctx: AxiContext) -> None:
     if ctx.json:
         sys.stderr.write(json.dumps(err.envelope()) + "\n")
         return
-    con = _console(ctx, stderr=True)
-    con.print(f"[red]error:[/red] {err.title}")
+    con = make_console(ctx, stderr=True)
+    con.print(Text.assemble(("error:", "red"), " ", safe_text(err.title)))
     if err.detail:
-        con.print(err.detail)
+        con.print(safe_text(err.detail))
