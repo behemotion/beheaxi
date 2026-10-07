@@ -241,11 +241,11 @@ The runner exits 0 (all pass) or 10 (some check failed), always with a per-check
 
 ## 11. Open items / deferred to the implementation plan
 
-- Exact Typer introspection mechanics for nested groups and `Annotated[...]` parameter metadata —
-  including the **verb-name collision rule** when beherouter flattens space-joined names to underscores
-  (e.g. a group `read multi` and a leaf `read_multi` would both flatten to `behemem_read_multi`).
-  Resolve here (likely: forbid underscores in verb names, or reserve the space→underscore mapping and
-  detect collisions at `attach` time).
+- Exact Typer introspection mechanics for nested groups and `Annotated[...]` parameter metadata.
+- ~~The **verb-name collision rule** when beherouter flattens space-joined names to underscores
+  (e.g. a group `read multi` and a leaf `read_multi` would both flatten to `behemem_read_multi`).~~
+  **Resolved 2026-10-07** by hardening spec S4 (`2026-10-07-beheaxi-hardening-design.md`): verb
+  names must match `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`, so underscores are rejected at registration.
 - Whether `describe` is hidden from the dashboard verb menu (lean: yes — it's plumbing).
 - Per-tool category checks (`conformance.scenarios.toml`, struck from §9 on 2026-10-07): add only when the first tool needs not-found/auth/conflict/unavailable verification.
 - Moving this spec into the `beheaxi` repo as that repo's first commit.
