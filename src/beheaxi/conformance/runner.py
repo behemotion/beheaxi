@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Callable
@@ -66,6 +67,55 @@ class ToolRunner:
         except OSError as e:  # PermissionError, exec format error, ...
             return EXIT_NOT_EXECUTABLE, "", f"cannot execute: {e}"
         return p.returncode, p.stdout, p.stderr
+
+    def run_tty(self, args: list[str]) -> tuple[int, str] | None:
+        """Run with stdout+stderr on a pseudo-terminal: (returncode, combined output).
+
+        A TTY is where colour actually switches on, so it is the only honest place to test
+        --no-color — pipes are never TTYs. Returns None where ptys do not exist (Windows).
+        """
+        try:
+            import pty
+            import select
+        except ImportError:  # pragma: no cover - non-POSIX
+            return None
+        master, slave = pty.openpty()
+        try:
+            try:
+                proc = subprocess.Popen(
+                    self.cmd + args,
+                    stdin=subprocess.DEVNULL,
+                    stdout=slave,
+                    stderr=slave,
+                    env=self.env,
+                )
+            except FileNotFoundError as e:
+                return EXIT_NOT_FOUND, f"not found: {e.filename}"
+            except OSError as e:
+                return EXIT_NOT_EXECUTABLE, f"cannot execute: {e}"
+            finally:
+                os.close(slave)  # the child holds its own copy
+            chunks: list[bytes] = []
+            deadline = time.monotonic() + self.timeout
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    proc.kill()
+                    proc.wait()
+                    return EXIT_TIMEOUT, f"timed out after {self.timeout:g}s"
+                ready, _, _ = select.select([master], [], [], min(remaining, 0.25))
+                if not ready:
+                    continue
+                try:
+                    data = os.read(master, 4096)
+                except OSError:  # EIO: how Linux reports the child closing the pty
+                    break
+                if not data:  # EOF: how macOS reports it
+                    break
+                chunks.append(data)
+        finally:
+            os.close(master)
+        return proc.wait(), b"".join(chunks).decode(errors="replace")
 
 
 def _guarded(check: Callable[[Runner], CheckResult], tool: Runner) -> CheckResult:
