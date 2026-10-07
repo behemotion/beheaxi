@@ -1,5 +1,10 @@
 from beheaxi.errors import (
-    ExitCode, NotFound, AuthError, Conflict, Unavailable, UsageError,
+    AuthError,
+    Conflict,
+    ExitCode,
+    NotFound,
+    Unavailable,
+    UsageError,
 )
 
 

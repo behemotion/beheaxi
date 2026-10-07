@@ -1,10 +1,10 @@
 from .app import BeheaxiApp
 from .dashboard import Status
 from .errors import (
-    AxiError,
-    AuthError,
-    Conflict,
     DOMAIN_EXIT_FLOOR,
+    AuthError,
+    AxiError,
+    Conflict,
     ExitCode,
     NotFound,
     Unavailable,
@@ -12,14 +12,14 @@ from .errors import (
 )
 
 __all__ = [
-    "BeheaxiApp",
-    "Status",
-    "AxiError",
-    "ExitCode",
     "DOMAIN_EXIT_FLOOR",
-    "UsageError",
-    "NotFound",
     "AuthError",
+    "AxiError",
+    "BeheaxiApp",
     "Conflict",
+    "ExitCode",
+    "NotFound",
+    "Status",
     "Unavailable",
+    "UsageError",
 ]

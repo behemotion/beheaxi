@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from rich.text import Text
 from rich.table import Table
+from rich.text import Text
 
 from .context import AxiContext
 from .output import make_console, safe_text

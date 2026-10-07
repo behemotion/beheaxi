@@ -5,9 +5,8 @@ import os
 import re
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Callable
 
 from .checks import ALL_CHECKS, CheckResult, Runner
 
@@ -18,9 +17,15 @@ EXIT_NOT_EXECUTABLE = 126
 EXIT_NOT_FOUND = 127
 
 # Conformance probes structure, never data, so the tool under test gets no credentials.
-# Matched case-insensitively against variable NAMES.
+# Matched case-insensitively against variable NAMES only — values are never inspected, so a
+# secret in an innocuously named variable still passes through (use a clean shell).
+# URLs: only the database/broker names that conventionally embed `user:password@`; a plain
+# `*_URL` (an API endpoint a dashboard may need) is kept. `--inherit-env` bypasses all this.
 SECRET_ENV = re.compile(
-    r"TOKEN|SECRET|PASSW(OR)?D|API_?KEY|CREDENTIAL|PRIVATE_?KEY|BEARER|AUTH", re.IGNORECASE
+    r"TOKEN|SECRET|PASSW(OR)?D|PASSPHRASE|API_?KEY|CREDENTIAL|PRIVATE_?KEY|BEARER|AUTH"
+    r"|COOKIE|SESSION|DSN"
+    r"|(DATABASE|DB|REDIS|AMQP|RABBITMQ|BROKER|MONGO(DB)?|POSTGRES(QL)?|PG|MYSQL)_UR[LI]",
+    re.IGNORECASE,
 )
 
 
@@ -56,9 +61,11 @@ class ToolRunner:
                 self.cmd + args,
                 capture_output=True,
                 text=True,
+                errors="replace",  # non-UTF-8 output is a defect to report, not a crash
                 timeout=self.timeout,
                 env=self.env,
                 stdin=subprocess.DEVNULL,
+                check=False,  # a non-zero exit is the result under test, not an error
             )
         except subprocess.TimeoutExpired:
             return EXIT_TIMEOUT, "", f"timed out after {self.timeout:g}s"
@@ -113,9 +120,15 @@ class ToolRunner:
                 if not data:  # EOF: how macOS reports it
                     break
                 chunks.append(data)
+            try:  # the child may close the pty and keep running: still bounded by the timeout
+                code = proc.wait(timeout=max(deadline - time.monotonic(), 0))
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                return EXIT_TIMEOUT, f"timed out after {self.timeout:g}s"
         finally:
             os.close(master)
-        return proc.wait(), b"".join(chunks).decode(errors="replace")
+        return code, b"".join(chunks).decode(errors="replace")
 
 
 def _guarded(check: Callable[[Runner], CheckResult], tool: Runner) -> CheckResult:

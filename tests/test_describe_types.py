@@ -10,6 +10,11 @@ import jsonschema
 import pytest
 import typer
 
+try:  # the base class, not typer's subclass: vendored in typer >= 0.26, standalone before
+    from typer._click.core import Context as ClickContext
+except ModuleNotFoundError:  # pragma: no cover - lowest-deps job
+    from click import Context as ClickContext
+
 from beheaxi.app import BeheaxiApp
 from beheaxi.describe import build_manifest
 
@@ -30,7 +35,7 @@ def make_app() -> BeheaxiApp:
         ratio: float = 1.0,
         flag: bool = False,
         maybe: int | None = None,
-        legacy: Optional[int] = None,
+        legacy: Optional[int] = None,  # noqa: UP045 - the pre-PEP 604 spelling, on purpose
         tags: list[str] | None = None,
         where: Path = Path("."),
         color: Color = Color.RED,
@@ -134,3 +139,54 @@ def test_short_only_options_are_named_by_their_declaration(capsys):
     for v in ("ann", "old"):
         assert app.main([v, "-n", "2", "--json"]) == 0
         assert json.loads(capsys.readouterr().out) == {"top": 2}
+
+
+def test_context_parameters_are_not_manifest_args(capsys):
+    app = BeheaxiApp(name="x", version="0", summary="x")
+
+    @app.command()
+    def with_ctx(ctx: typer.Context, name: str) -> None:
+        """Typer context."""
+        app.emit({"verb": ctx.info_name, "name": name})
+
+    @app.command()
+    def with_click_ctx(ctx: ClickContext, n: int = 1) -> None:
+        """Base click context."""
+
+    verbs = {v["name"]: v["args"] for v in build_manifest(app)["verbs"]}
+    assert verbs["with-ctx"] == [{"name": "name", "type": "string", "required": True}]
+    assert verbs["with-click-ctx"] == [{"name": "--n", "type": "integer", "required": False}]
+    assert app.main(["with-ctx", "bob", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"verb": "with-ctx", "name": "bob"}
+
+
+def test_default_factory_options_are_optional(capsys):
+    app = BeheaxiApp(name="x", version="0", summary="x")
+
+    @app.command()
+    def ann(top: Annotated[int, typer.Option(default_factory=lambda: 5)]) -> None:
+        """Annotated default_factory."""
+        app.emit({"top": top})
+
+    @app.command()
+    def old(top: int = typer.Option(default_factory=lambda: 6)) -> None:
+        """Old-style default_factory."""
+        app.emit({"top": top})
+
+    verbs = {v["name"]: v["args"] for v in build_manifest(app)["verbs"]}
+    assert verbs["ann"] == [{"name": "--top", "type": "integer", "required": False}]
+    assert verbs["old"] == [{"name": "--top", "type": "integer", "required": False}]
+    assert app.main(["ann", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"top": 5}
+    assert app.main(["old", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"top": 6}
+
+
+def test_default_factory_positional_is_still_rejected():
+    app = BeheaxiApp(name="x", version="0", summary="x")
+
+    def opt(target: Annotated[str, typer.Argument(default_factory=lambda: "here")]) -> None:
+        """Optional positional via default_factory."""
+
+    with pytest.raises(ValueError, match="optional positional"):
+        app.command()(opt)

@@ -51,3 +51,15 @@ def test_flags_after_double_dash_are_literal_arguments():
 def test_flags_before_double_dash_are_still_extracted():
     ctx, rest = extract_global_flags(["--json", "echo", "--", "x"])
     assert ctx.json is True and rest == ["echo", "--", "x"]
+
+
+def test_double_dash_as_the_first_token_keeps_everything_literal():
+    ctx, rest = extract_global_flags(["--", "--json", "--no-color"])
+    assert (ctx.json, ctx.quiet) == (False, False)
+    assert rest == ["--", "--json", "--no-color"]
+
+
+def test_repeated_double_dash_stays_literal():
+    ctx, rest = extract_global_flags(["echo", "--", "x", "--", "--quiet"])
+    assert ctx.quiet is False
+    assert rest == ["echo", "--", "x", "--", "--quiet"]
