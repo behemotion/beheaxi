@@ -1,7 +1,7 @@
 import json
 
 from beheaxi.app import BeheaxiApp
-from beheaxi.errors import NotFound, ExitCode
+from beheaxi.errors import NotFound, ExitCode, Unavailable
 
 
 def make_app():
@@ -79,3 +79,48 @@ def test_unknown_command_exits_usage_2():
         app.emit({"ok": True})
 
     assert app.main(["definitely-not-a-command"]) == ExitCode.USAGE
+
+
+def make_emit_app():
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
+
+    @app.command()
+    def twice() -> None:
+        """Emits twice."""
+        app.emit({"a": 1})
+        app.emit({"b": 2})
+
+    @app.command()
+    def emit_then_raise() -> None:
+        """beherouter `health --deep` shape: records to stdout, verdict as an error."""
+        app.emit({"ok": False})
+        raise Unavailable("backend down")
+
+    return app
+
+
+def test_second_emit_in_json_mode_is_an_error(capsys):
+    code = make_emit_app().main(["twice", "--json"])
+    cap = capsys.readouterr()
+    assert code == ExitCode.INTERNAL
+    assert [json.loads(line) for line in cap.out.splitlines()] == [{"a": 1}]
+    assert "more than once" in json.loads(cap.err)["error"]["title"]
+
+
+def test_second_emit_in_human_mode_is_fine():
+    assert make_emit_app().main(["twice"]) == ExitCode.OK
+
+
+def test_emit_then_raise_keeps_both_result_and_error(capsys):
+    code = make_emit_app().main(["emit-then-raise", "--json"])
+    cap = capsys.readouterr()
+    assert code == ExitCode.UNAVAILABLE
+    assert json.loads(cap.out) == {"ok": False}
+    assert json.loads(cap.err)["error"]["code"] == 6
+
+
+def test_emit_guard_resets_between_runs(capsys):
+    app = make_emit_app()
+    app.main(["emit-then-raise", "--json"])
+    capsys.readouterr()
+    assert app.main(["emit-then-raise", "--json"]) == ExitCode.UNAVAILABLE

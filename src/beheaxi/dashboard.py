@@ -1,8 +1,6 @@
 """The no-arg live dashboard: a uniform renderer fed by a per-tool status() hook."""
 from __future__ import annotations
 
-import json
-import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -34,7 +32,7 @@ def render(app: BeheaxiApp, ctx: AxiContext) -> None:
             "suggest": status.suggest if status else [],
             "verbs": verbs,
         }
-        sys.stdout.write(json.dumps(payload) + "\n")
+        app.emit(payload)
         return
     con = make_console(ctx)
     con.print(
