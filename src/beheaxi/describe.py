@@ -51,12 +51,15 @@ def _type_of(annotation: Any) -> tuple[str, list[str] | None]:
 
 
 def _option_name(param_name: str, decls: tuple[str, ...]) -> str:
-    """The first `--long` declaration (`--force/--no-force` -> `--force`), else Typer's
-    default `--param-name`."""
-    for decl in decls:
-        first = decl.split("/")[0].strip()
+    """The first `--long` declaration (`--force/--no-force` -> `--force`). With only short
+    declarations (`-n`), the first one verbatim, since Typer registers no `--param-name`
+    then. Typer's default `--param-name` only when nothing is declared."""
+    names = [d.split("/")[0].strip() for d in decls]
+    for first in names:
         if first.startswith("--"):
             return first
+    if names:
+        return names[0]
     return f"--{param_name.replace('_', '-')}"
 
 
