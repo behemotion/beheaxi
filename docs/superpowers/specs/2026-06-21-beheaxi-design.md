@@ -124,6 +124,7 @@ maps to flat MCP tools (`behelib_shelf_create`).
 **Type mapping** (Python → schema string): `str→string`, `int→integer`, `float→number`,
 `bool→boolean`, `Path→string`, `Enum→string` (+`enum` values), `list[T]→array`. `required` = the
 parameter has no default.
+Annotations are resolved with `typing.get_type_hints` (so `from __future__ import annotations` works); `Optional`/`X | None` and `Annotated[...]` are unwrapped; a custom `typer.Option("--name")` declaration names the flag. Because consumers render `required ⇔ positional`, registration rejects required options and optional positionals (hardening spec 2026-10-07, B3a).
 
 ```json
 {
@@ -155,7 +156,7 @@ validation, so the schema is the enforced contract beherouter builds against.
 **Output contract.** In `--json` mode, every command emits exactly **one JSON document to stdout**
 (object or array), so a consumer can always `json.parse(stdout)` on success. Human mode renders Rich.
 `--quiet` suppresses non-essential chrome; `--no-color` strips ANSI (and is auto-on for non-TTY).
-The framework helper `app.emit(data)` serializes-or-renders based on the active `AxiContext`.
+The framework helper `app.emit(data)` serializes-or-renders based on the active `AxiContext`. In `--json` mode a second `emit()` in one run is an error; emit-then-raise is allowed (stdout = result, stderr = envelope). Human output never interprets Rich markup in data and strips terminal control characters; `--no-color`/`NO_COLOR` emit no escape codes at all.
 
 **Error envelope** (problem+json-style). In `--json` mode the envelope is emitted as JSON to
 **stderr** (stdout stays clean for success payloads); in human mode a friendly Rich message goes to
@@ -180,13 +181,15 @@ stderr. The exit code is the primary machine signal.
 | 0 | ok | success |
 | 1 | internal | unexpected / uncaught error |
 | 2 | usage | bad arguments or flags (Click default) |
-| 3 | not-found | requested resource does not exist |
+| 3 | not_found | requested resource does not exist |
 | 4 | auth | authentication / authorization failure |
 | 5 | conflict | already-exists / state conflict |
 | 6 | unavailable | backend / dependency down |
 
 `AxiError` subclasses (`UsageError`, `NotFound`, `AuthError`, `Conflict`, `Unavailable`) carry their
 code and envelope fields. The top-level handler maps any uncaught exception to `internal` (1).
+
+**Domain codes.** beheaxi owns 0–9 (7–9 are held for future framework classes). A tool's own codes start at `DOMAIN_EXIT_FLOOR = 10` (`beheaxi.errors`); CONVENTIONS §2. **Redaction.** Uncaught exceptions render as `internal` with only the exception class name in `detail`; `BEHEAXI_DEBUG=1` adds the traceback. **Verb names** match `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`; `describe` is reserved.
 
 **Canonical source.** This `ExitCode` enum lives in beheaxi and is imported by every tool — it is
 the one authoritative definition, so no tool re-derives its own scheme. It extends the five named
@@ -216,19 +219,16 @@ still gets header + verb menu (state/suggest sections omitted).
 
 1. `describe --json` exits 0 and validates against `manifest_schema.json`;
 2. every `pinned` verb is present, each with a summary and args;
-3. `<tool> --json describe` is parseable JSON; `<tool> --no-color …` output contains zero ANSI;
+3. `<tool> --json describe` is parseable JSON; `<tool> --no-color` (dashboard) and `<tool> --no-color describe` contain zero escape bytes on stdout/stderr, piped **and on a pseudo-terminal**;
 4. no-arg invocation exits 0 and prints non-empty output (the dashboard);
-5. a bogus flag/command exits 2 (usage).
+5. a bogus command exits 2 (usage);
+6. `<tool> --json <bogus>` leaves stdout empty and writes a `usage` envelope to stderr whose `code` equals the exit code (`json_error_envelope`).
 
-**Optional deeper checks:** a tool may ship a `conformance.scenarios.toml` mapping specific
-command invocations to expected exit codes, letting the runner verify the not-found/auth/conflict/
-unavailable categories per tool. Absent the file, the structural checks above are the gate.
-
-The runner exits 0 (all pass) or non-zero (with a per-check PASS/FAIL report).
+The runner exits 0 (all pass) or 10 (some check failed), always with a per-check report; credential-named env vars are stripped from the target unless `--inherit-env`.
 
 ## 10. Distribution, deploy, testing
 
-- **Dependency:** versioned git dep (`beheaxi @ git+https://github.com/behemotion/beheaxi@v0.1.0`)
+- **Dependency:** versioned git dep (`beheaxi @ git+https://github.com/behemotion/beheaxi@v0.2.0`)
   + a local-path `[tool.uv.sources]` dev override (not shipped).
 - **No deploy surface:** beheaxi has no `deploy.md`, no port, no Postgres — it is a build-time
   library, not a service. (It is therefore absent from the deploy port registry.)
@@ -247,5 +247,5 @@ The runner exits 0 (all pass) or non-zero (with a per-check PASS/FAIL report).
   Resolve here (likely: forbid underscores in verb names, or reserve the space→underscore mapping and
   detect collisions at `attach` time).
 - Whether `describe` is hidden from the dashboard verb menu (lean: yes — it's plumbing).
-- The precise `conformance.scenarios.toml` schema (only when the first tool needs category checks).
+- Per-tool category checks (`conformance.scenarios.toml`, struck from §9 on 2026-10-07): add only when the first tool needs not-found/auth/conflict/unavailable verification.
 - Moving this spec into the `beheaxi` repo as that repo's first commit.
