@@ -1,19 +1,26 @@
 """BeheaxiApp — the one object that auto-wires the AXI standard."""
 from __future__ import annotations
 
+import functools
 import importlib
 import inspect
+import os
+import sys
+import traceback
 from dataclasses import dataclass
 from typing import Any, Callable
 
 import typer
 
+from . import output
 from .context import AxiContext, extract_global_flags
 from .errors import AxiError, ExitCode, UsageError
-from . import output
 
-def _click_exception_types() -> tuple[type[BaseException], ...]:
-    """Every ClickException class that Typer might raise, in this environment.
+DEBUG_ENV = "BEHEAXI_DEBUG"
+
+
+def _click_classes(name: str) -> tuple[type[BaseException], ...]:
+    """Every importable variant of Click's exception class `name`, in this environment.
 
     Click is a standalone package in older Typer and vendored under
     `typer._click` in >=0.26 — but BOTH can be importable at once, because a
@@ -30,13 +37,34 @@ def _click_exception_types() -> tuple[type[BaseException], ...]:
             mod = importlib.import_module(module)
         except ModuleNotFoundError:  # pragma: no cover - depends on packaging
             continue
-        exc = getattr(mod, "ClickException", None)
+        exc = getattr(mod, name, None)
         if isinstance(exc, type) and issubclass(exc, BaseException) and exc not in found:
             found.append(exc)
     return tuple(found)
 
 
+def _click_exception_types() -> tuple[type[BaseException], ...]:
+    return _click_classes("ClickException")
+
+
 _CLICK_EXCEPTIONS = _click_exception_types()
+# Click converts Ctrl-C/EOF inside a verb (and a declined confirm(abort=True)) into Abort,
+# which is a RuntimeError, not a ClickException.
+_CLICK_ABORTS = _click_classes("Abort")
+
+
+def _internal_error(exc: BaseException) -> AxiError:
+    """An uncaught exception -> a redacted `internal` error.
+
+    Exception text from DB drivers and HTTP clients routinely embeds DSNs, credentialed URLs
+    and tokens, and stderr is captured into agent transcripts and gateway logs. So only the
+    exception CLASS is shown, unless BEHEAXI_DEBUG is set: then the full traceback.
+    """
+    if os.environ.get(DEBUG_ENV):
+        detail = "".join(traceback.format_exception(exc)).rstrip()
+    else:
+        detail = f"{type(exc).__name__} (set {DEBUG_ENV}=1 for the traceback)"
+    return AxiError("Internal error", detail=detail)
 
 
 @dataclass
@@ -93,7 +121,13 @@ class BeheaxiApp:
                     mutating,
                 )
             )
-            self._typer.command(name=verb_name)(fn)
+            @functools.wraps(fn)
+            def invoke(*args: Any, **kwargs: Any) -> None:
+                # Discard the verb's return value: under standalone_mode=False Click hands it
+                # back to main(), which must only ever see Exit codes there.
+                fn(*args, **kwargs)
+
+            self._typer.command(name=verb_name)(invoke)
             return fn
 
         return deco
@@ -124,15 +158,17 @@ class BeheaxiApp:
 
     # --- entrypoint ---------------------------------------------------------
     def main(self, argv: list[str] | None = None) -> int:
-        import sys
-
         raw = list(sys.argv[1:]) if argv is None else list(argv)
         self.ctx, rest = extract_global_flags(raw)
         self._emitted = False
-        if not rest:
-            return int(self._run_dashboard())
         try:
-            self._typer(args=rest, standalone_mode=False)
+            if not rest:
+                return self._run_dashboard()
+            rv = self._typer(args=rest, standalone_mode=False)
+            # Verbs run through a None-returning wrapper (`command`), so an int here can only
+            # be Click handing back an Exit's code: `raise typer.Exit(3)` must exit 3.
+            if isinstance(rv, int) and not isinstance(rv, bool):
+                return rv
             return int(ExitCode.OK)
         except AxiError as e:
             output.render_error(e, self.ctx)
@@ -144,13 +180,26 @@ class BeheaxiApp:
             err = UsageError(message)  # standalone_mode=False (not as SystemExit)
             output.render_error(err, self.ctx)
             return int(err.code)  # USAGE == 2
-        except SystemExit as e:  # --help / ctx.exit(): already-clean exits
-            return int(e.code) if isinstance(e.code, int) else int(ExitCode.OK)
-        except Exception as e:  # truly uncaught -> internal (1)
-            internal = AxiError(str(e) or "Internal error")
-            internal.type_ = "internal"
-            output.render_error(internal, self.ctx)
+        except _CLICK_ABORTS:
+            aborted = AxiError("Aborted")
+            output.render_error(aborted, self.ctx)
+            return int(aborted.code)
+        except SystemExit as e:  # --help / ctx.exit() / sys.exit() inside a verb
+            return self._system_exit_code(e)
+        except Exception as e:  # truly uncaught -> redacted internal (1)
+            output.render_error(_internal_error(e), self.ctx)
             return int(ExitCode.INTERNAL)
+
+    def _system_exit_code(self, e: SystemExit) -> int:
+        """Mirror the interpreter: None -> 0, an int -> itself, anything else is printed and
+        exits 1 — `sys.exit("fatal")` must never report success."""
+        if e.code is None:
+            return int(ExitCode.OK)
+        if isinstance(e.code, int):
+            return e.code
+        failure = AxiError(str(e.code))
+        output.render_error(failure, self.ctx)
+        return int(failure.code)
 
     def _run_dashboard(self) -> int:
         from . import dashboard

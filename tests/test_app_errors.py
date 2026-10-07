@@ -1,6 +1,10 @@
 import json
+import sys
+
+import typer
 
 from beheaxi.app import BeheaxiApp
+from beheaxi.dashboard import Status
 from beheaxi.errors import NotFound, ExitCode, Unavailable
 
 
@@ -124,3 +128,104 @@ def test_emit_guard_resets_between_runs(capsys):
     app.main(["emit-then-raise", "--json"])
     capsys.readouterr()
     assert app.main(["emit-then-raise", "--json"]) == ExitCode.UNAVAILABLE
+
+
+def make_exits_app():
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
+
+    @app.command()
+    def typer_exit() -> None:
+        """typer.Exit(3)."""
+        raise typer.Exit(code=3)
+
+    @app.command()
+    def sys_exit_msg() -> None:
+        """sys.exit with a message."""
+        sys.exit("fatal: disk full")
+
+    @app.command()
+    def sys_exit_int() -> None:
+        """sys.exit(12)."""
+        sys.exit(12)
+
+    @app.command()
+    def returns_value() -> int:
+        """Returns 7, which must NOT become the exit code."""
+        return 7
+
+    @app.command()
+    def aborts() -> None:
+        """typer.Abort (what Click raises on Ctrl-C inside a verb)."""
+        raise typer.Abort()
+
+    @app.command()
+    def leak() -> None:
+        """Leaks a DSN in its exception text."""
+        raise RuntimeError("connect failed: postgres://admin:hunter2@db/prod")
+
+    return app
+
+
+def test_typer_exit_code_is_propagated():
+    assert make_exits_app().main(["typer-exit"]) == 3
+
+
+def test_sys_exit_with_a_message_is_a_failure(capsys):
+    assert make_exits_app().main(["sys-exit-msg", "--json"]) == ExitCode.INTERNAL
+    assert json.loads(capsys.readouterr().err)["error"]["title"] == "fatal: disk full"
+
+
+def test_sys_exit_int_is_propagated():
+    assert make_exits_app().main(["sys-exit-int"]) == 12
+
+
+def test_command_return_value_is_not_an_exit_code():
+    assert make_exits_app().main(["returns-value"]) == ExitCode.OK
+
+
+def test_click_abort_is_reported_as_aborted(capsys):
+    assert make_exits_app().main(["aborts", "--json"]) == ExitCode.INTERNAL
+    assert json.loads(capsys.readouterr().err)["error"]["title"] == "Aborted"
+
+
+def test_internal_error_redacts_exception_text(capsys, monkeypatch):
+    monkeypatch.delenv("BEHEAXI_DEBUG", raising=False)
+    assert make_exits_app().main(["leak", "--json"]) == ExitCode.INTERNAL
+    err = capsys.readouterr().err
+    assert "hunter2" not in err
+    body = json.loads(err)["error"]
+    assert body["title"] == "Internal error"
+    assert body["detail"].startswith("RuntimeError")
+
+
+def test_debug_env_reveals_the_traceback(capsys, monkeypatch):
+    monkeypatch.setenv("BEHEAXI_DEBUG", "1")
+    make_exits_app().main(["leak", "--json"])
+    detail = json.loads(capsys.readouterr().err)["error"]["detail"]
+    assert "Traceback" in detail and "hunter2" in detail
+
+
+def test_failing_status_hook_renders_an_envelope(capsys):
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
+
+    @app.status()
+    def status() -> Status:
+        raise RuntimeError("status backend down")
+
+    assert app.main(["--json"]) == ExitCode.INTERNAL
+    cap = capsys.readouterr()
+    assert cap.out == ""
+    assert json.loads(cap.err)["error"]["type"] == "internal"
+
+
+def test_nan_in_status_state_is_an_internal_envelope(capsys):
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo.")
+
+    @app.status()
+    def status() -> Status:
+        return Status(state={"v": float("nan")})
+
+    assert app.main(["--json"]) == ExitCode.INTERNAL
+    cap = capsys.readouterr()
+    assert cap.out == ""
+    assert json.loads(cap.err)["error"]["title"] == "Output is not valid JSON"
