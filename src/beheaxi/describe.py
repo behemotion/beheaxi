@@ -1,53 +1,123 @@
-"""Introspect a BeheaxiApp's command tree into the describe --json manifest."""
+"""Introspect verb signatures into describe --json manifest entries.
+
+Arg entries are computed once, at registration (`BeheaxiApp.command`), so a signature the
+manifest cannot express truthfully fails at import time instead of shipping a manifest that
+lies to beherouter.
+"""
 from __future__ import annotations
 
 import inspect
+import types
+import typing
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, get_origin
+from typing import TYPE_CHECKING, Any, Callable, get_args, get_origin
+
+from typer.models import ArgumentInfo, ParameterInfo
 
 if TYPE_CHECKING:
     from .app import BeheaxiApp
 
-_SCALARS: dict[type, str] = {
+_SCALARS: dict[Any, str] = {
     str: "string",
     int: "integer",
     float: "number",
     bool: "boolean",
     Path: "string",
 }
+_ARRAYS = (list, tuple, set, frozenset)
+
+
+def _unwrap(annotation: Any) -> tuple[Any, ParameterInfo | None]:
+    """Strip Annotated[...] (keeping typer Argument/Option metadata) and Optional[...]."""
+    info: ParameterInfo | None = None
+    if get_origin(annotation) is typing.Annotated:
+        base, *meta = get_args(annotation)
+        info = next((m for m in meta if isinstance(m, ParameterInfo)), None)
+        annotation = base
+    if get_origin(annotation) in (typing.Union, types.UnionType):
+        members = [a for a in get_args(annotation) if a is not type(None)]
+        if len(members) == 1:
+            annotation = members[0]
+    return annotation, info
 
 
 def _type_of(annotation: Any) -> tuple[str, list[str] | None]:
-    if get_origin(annotation) is list:
+    if annotation in _ARRAYS or get_origin(annotation) in _ARRAYS:
         return "array", None
     if isinstance(annotation, type) and issubclass(annotation, Enum):
         return "string", [str(e.value) for e in annotation]
     return _SCALARS.get(annotation, "string"), None
 
 
-def _arg_entry(param: inspect.Parameter) -> dict[str, Any]:
-    required = param.default is inspect.Parameter.empty
-    # Convention: required params are positional (bare name); optional render as --flags.
-    name = param.name if required else f"--{param.name.replace('_', '-')}"
-    typ, enum = _type_of(param.annotation)
+def _option_name(param_name: str, decls: tuple[str, ...]) -> str:
+    """The first `--long` declaration (`--force/--no-force` -> `--force`), else Typer's
+    default `--param-name`."""
+    for decl in decls:
+        first = decl.split("/")[0].strip()
+        if first.startswith("--"):
+            return first
+    return f"--{param_name.replace('_', '-')}"
+
+
+def arg_entry(param: inspect.Parameter, hint: Any) -> dict[str, Any]:
+    """One manifest arg entry. Raises ValueError for shapes the manifest cannot express."""
+    annotation, info = _unwrap(hint)
+    default: Any = param.default
+    decls: tuple[str, ...] = ()
+    if isinstance(default, ParameterInfo):  # old style: `x: int = typer.Option(5, "--x")`
+        info, default = default, default.default
+        decls = tuple(getattr(info, "param_decls", None) or ())
+    elif info is not None:
+        decls = tuple(getattr(info, "param_decls", None) or ())
+        # Annotated style: Typer reads a str first argument as a declaration, so
+        # Annotated[int, typer.Option("--limit", "-n")] stores "--limit" as `default`.
+        if isinstance(info.default, str):
+            decls = (info.default, *decls)
+    required = default is inspect.Parameter.empty or default is ...
+    positional = isinstance(info, ArgumentInfo) or (info is None and required)
+    if positional != required:
+        shape = "a required option" if required else "an optional positional argument"
+        raise ValueError(
+            f"parameter {param.name!r} is {shape}: the describe manifest marks required args "
+            "as positional and optional args as --flags (beherouter builds argv that way), "
+            "so make it a plain positional with no default, or an option with a default"
+        )
+    name = param.name if positional else _option_name(param.name, decls)
+    typ, enum = _type_of(annotation)
     entry: dict[str, Any] = {"name": name, "type": typ, "required": required}
     if enum is not None:
         entry["enum"] = enum
     return entry
 
 
+def arg_entries(fn: Callable[..., Any]) -> list[dict[str, Any]]:
+    """Manifest arg entries for a verb function, in signature order."""
+    try:
+        # Resolves string annotations: under `from __future__ import annotations` (used
+        # across the harness) every annotation is a str that _type_of cannot map.
+        hints = typing.get_type_hints(fn, include_extras=True)
+    except Exception as e:  # noqa: BLE001 - NameError/TypeError from unresolvable refs
+        raise ValueError(
+            f"cannot resolve the annotations of verb function {fn.__name__!r}: {e}. "
+            "Define referenced types before the verb."
+        ) from e
+    return [
+        arg_entry(p, hints.get(p.name, p.annotation))
+        for p in inspect.signature(fn).parameters.values()
+        if p.name != "self"
+    ]
+
+
 def build_manifest(app: BeheaxiApp) -> dict[str, Any]:
-    verbs = []
-    for v in app._verbs:
-        args = [_arg_entry(p) for p in v.params if p.name != "self"]
-        verbs.append(
-            {
-                "name": v.name,
-                "summary": v.summary,
-                "args": args,
-                "pinned": v.pinned,
-                "mutating": v.mutating,
-            }
-        )
+    verbs = [
+        {
+            "name": v.name,
+            "summary": v.summary,
+            "args": v.args,
+            "pinned": v.pinned,
+            "mutating": v.mutating,
+        }
+        for v in app._verbs
+    ]
     return {"tool": app.name, "version": app.version, "summary": app.summary, "verbs": verbs}

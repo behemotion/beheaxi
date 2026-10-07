@@ -15,6 +15,7 @@ import typer
 
 from . import output
 from .context import AxiContext, extract_global_flags
+from .describe import arg_entries, build_manifest
 from .errors import AxiError, ExitCode, UsageError
 
 DEBUG_ENV = "BEHEAXI_DEBUG"
@@ -77,7 +78,7 @@ def _internal_error(exc: BaseException) -> AxiError:
 class Verb:
     name: str
     summary: str
-    params: list[Any]
+    args: list[dict[str, Any]]
     pinned: bool
     mutating: bool
 
@@ -104,12 +105,10 @@ class BeheaxiApp:
         # Auto-register the `describe` command so it always exists. It is framework
         # plumbing: intentionally NOT added to self._verbs, so it is excluded from the
         # manifest and the dashboard verb menu.
-        from . import describe as _describe
-
         @self._typer.command(name="describe")
         def _describe_cmd() -> None:
             """Emit the registration manifest (describe --json is the contract surface)."""
-            self.emit(_describe.build_manifest(self))
+            self.emit(build_manifest(self))
 
     # --- registration -------------------------------------------------------
     def command(
@@ -119,15 +118,9 @@ class BeheaxiApp:
             verb_name = name or fn.__name__.replace("_", "-")
             self._check_verb_name(verb_name)
             summary = (inspect.getdoc(fn) or "").split("\n")[0]
-            self._verbs.append(
-                Verb(
-                    verb_name,
-                    summary,
-                    list(inspect.signature(fn).parameters.values()),
-                    pinned,
-                    mutating,
-                )
-            )
+            args = arg_entries(fn)  # raises ValueError for unexpressible shapes (B3a)
+            self._verbs.append(Verb(verb_name, summary, args, pinned, mutating))
+
             @functools.wraps(fn)
             def invoke(*args: Any, **kwargs: Any) -> None:
                 # Discard the verb's return value: under standalone_mode=False Click hands it
