@@ -118,8 +118,8 @@ class BeheaxiApp:
             verb_name = name or fn.__name__.replace("_", "-")
             self._check_verb_name(verb_name)
             summary = (inspect.getdoc(fn) or "").split("\n")[0]
-            args = arg_entries(fn)  # raises ValueError for unexpressible shapes (B3a)
-            self._verbs.append(Verb(verb_name, summary, args, pinned, mutating))
+            entries = arg_entries(fn)  # raises ValueError for unexpressible shapes (B3a)
+            self._verbs.append(Verb(verb_name, summary, entries, pinned, mutating))
 
             @functools.wraps(fn)
             def invoke(*args: Any, **kwargs: Any) -> None:
