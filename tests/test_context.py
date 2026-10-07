@@ -40,3 +40,14 @@ def test_tty_without_no_color_keeps_color(monkeypatch):
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     monkeypatch.delenv("NO_COLOR", raising=False)
     assert extract_global_flags([])[0].no_color is False
+
+
+def test_flags_after_double_dash_are_literal_arguments():
+    ctx, rest = extract_global_flags(["echo", "--", "--json", "--quiet"])
+    assert (ctx.json, ctx.quiet) == (False, False)
+    assert rest == ["echo", "--", "--json", "--quiet"]
+
+
+def test_flags_before_double_dash_are_still_extracted():
+    ctx, rest = extract_global_flags(["--json", "echo", "--", "x"])
+    assert ctx.json is True and rest == ["echo", "--", "x"]
