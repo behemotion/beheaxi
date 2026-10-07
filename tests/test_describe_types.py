@@ -114,3 +114,23 @@ def test_unresolvable_annotation_is_rejected():
 
     with pytest.raises(ValueError, match="cannot resolve"):
         app.command()(broken)
+
+
+def test_short_only_options_are_named_by_their_declaration(capsys):
+    app = BeheaxiApp(name="x", version="0", summary="x")
+
+    @app.command()
+    def ann(top: Annotated[int, typer.Option("-n")] = 5) -> None:
+        """Annotated short-only."""
+        app.emit({"top": top})
+
+    @app.command()
+    def old(top: int = typer.Option(5, "-n")) -> None:
+        """Old-style short-only."""
+        app.emit({"top": top})
+
+    for verb in build_manifest(app)["verbs"]:
+        assert verb["args"] == [{"name": "-n", "type": "integer", "required": False}]
+    for v in ("ann", "old"):
+        assert app.main([v, "-n", "2", "--json"]) == 0
+        assert json.loads(capsys.readouterr().out) == {"top": 2}
