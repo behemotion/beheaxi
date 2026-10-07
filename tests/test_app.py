@@ -1,3 +1,5 @@
+import json
+
 from beheaxi.app import BeheaxiApp
 from beheaxi.errors import ExitCode
 
@@ -30,3 +32,15 @@ def test_pinned_metadata_recorded():
 def test_global_flag_after_subcommand(capsys):
     make_app().main(["greet", "world", "--json"])  # --json AFTER subcommand
     assert '"hello"' in capsys.readouterr().out
+
+
+def test_literal_flag_after_double_dash_reaches_the_verb(capsys):
+    app = BeheaxiApp(name="demo", version="0.0.1", summary="Demo tool.")
+
+    @app.command()
+    def echo(word: str) -> None:
+        """Echo a word."""
+        app.emit({"word": word})
+
+    assert app.main(["echo", "--json", "--", "--quiet"]) == ExitCode.OK
+    assert json.loads(capsys.readouterr().out) == {"word": "--quiet"}

@@ -20,10 +20,15 @@ def extract_global_flags(argv: list[str]) -> tuple[AxiContext, list[str]]:
 
     Stripping the global flags before Typer/Click parses makes them work in any position
     (before or after the subcommand) — Click's own option parsing is placement-sensitive.
+    Extraction stops at `--`: everything after it is a literal argument (POSIX), so a verb
+    can receive the string "--json" as data. The `--` itself is kept for Click.
     """
     ctx = AxiContext()
     rest: list[str] = []
-    for tok in argv:
+    for i, tok in enumerate(argv):
+        if tok == "--":
+            rest.extend(argv[i:])
+            break
         if tok == "--json":
             ctx.json = True
         elif tok == "--quiet":
