@@ -21,7 +21,7 @@
 - Dependency floor after Task 10: `typer>=0.13.1` (`rich>=13.7`, `jsonschema>=4.21` unchanged).
 - Release version: `0.2.0`. **Never push, tag or create a release without explicit user confirmation.**
 - Run every command from the repo root (`beheaxi/`). Run tests with `uv run pytest -q`.
-- Commit messages: conventional style (`fix:`, `feat:`, `ci:`, `docs:`), ending with
+- Commit messages: conventional style (`fix:`, `feat:`, `ci:`, `docs:`).
 - Do not edit anything under `../beherouter/`. Task 12 only *runs* it.
 
 ## File map
@@ -254,6 +254,7 @@ Rich markup is disabled framework-wide and terminal control / bidi characters ar
 stripped from rendered strings (S2, S3). --no-color and NO_COLOR now use
 color_system=None: Rich's no_color still emitted bold on a real TTY (B10).
 
+"
 ```
 
 ---
@@ -437,6 +438,7 @@ One strict encoder (default=str, allow_nan=False); render_error drops an
 unencodable context instead of crashing (B5); a second emit() in --json mode is an
 error, while emit-then-raise stays legal for beherouter health --deep (B6).
 
+"
 ```
 
 ---
@@ -527,6 +529,7 @@ Expected: all pass.
 git add src/beheaxi/context.py tests/
 git commit -m "fix: stop global-flag extraction at -- (B7)
 
+"
 ```
 
 ---
@@ -802,6 +805,7 @@ typer.Exit(n) and sys.exit('msg') now exit as they should (B1, B2); the
 dashboard runs inside the handler (B4); click.Abort reports 'Aborted' (I4);
 uncaught exception text is redacted unless BEHEAXI_DEBUG is set (S1).
 
+"
 ```
 
 ---
@@ -910,6 +914,7 @@ git commit -m "fix: validate verb names at registration; reserve describe (S4)
 Rejects malformed, underscore-bearing (divergence #5), duplicate and reserved
 names. @app.command(name='describe') used to silently replace the manifest verb.
 
+"
 ```
 
 ---
@@ -1206,6 +1211,7 @@ honours custom --option declarations (B3). Required options and optional
 positionals raise at registration: beherouter renders required => positional,
 so the manifest could not describe them truthfully (B3a).
 
+"
 ```
 
 ---
@@ -1588,6 +1594,7 @@ Launch failures map to 124/126/127 results and each check is guarded, so one
 malformed target fails one check instead of the run (B8). The target's env is
 scrubbed of credential-named variables (S5).
 
+"
 ```
 
 ---
@@ -1762,6 +1769,7 @@ no_color now inspects stdout+stderr of the dashboard and describe, piped and
 under a pseudo-terminal, where colour actually switches on (I2, B10). The new
 json_error_envelope check asserts the --json error contract end to end.
 
+"
 ```
 
 ---
@@ -1892,6 +1900,7 @@ nonconformant target, so 1 keeps meaning 'the runner crashed' (I1). The CLI
 version is read from package metadata instead of a drifted literal (B9).
 Adds --inherit-env to opt out of secret scrubbing.
 
+"
 ```
 
 ---
@@ -2060,6 +2069,7 @@ flag. Raise it to 0.13.1 and add a lowest-direct job so it cannot drift (I3).
 Pin actions to commit SHAs, set contents: read, persist-credentials: false,
 UV_LOCKED, a py3.12/3.13 matrix, pip-audit, and Dependabot (S6).
 
+"
 ```
 
 ---
@@ -2150,6 +2160,7 @@ Expected: all pass.
 git add pyproject.toml uv.lock README.md docs/superpowers/specs/2026-06-21-beheaxi-design.md
 git commit -m "docs: release notes and spec amendments for v0.2.0
 
+"
 ```
 
 ---
