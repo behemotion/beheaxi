@@ -52,12 +52,39 @@ of 2 — and the consumer fails its own `usage_exit_2` conformance check.
 
 ```toml
 # pyproject.toml
-dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.1.2"]
+dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.2.0"]
 ```
 
 v0.1.2 is the first release carrying `LICENSE` and `NOTICE`, which Apache 2.0
 §4(d) requires to reach downstream consumers; the exit-code fix above landed in
 v0.1.1, so the floor still holds.
+
+### Upgrading to 0.2.0
+
+0.2.0 is a hardening release (spec: `docs/superpowers/specs/2026-10-07-beheaxi-hardening-design.md`).
+Things you may notice:
+
+- **Registration is stricter.** `@app.command` raises `ValueError` at import for invalid,
+  duplicate or reserved (`describe`) verb names, unresolvable annotations, required options
+  and optional positionals — the manifest marks required ⇔ positional, and beherouter builds
+  argv from that.
+- **The manifest reports real types** (`integer`, `boolean`, `array`, enums) even under
+  `from __future__ import annotations`, and uses custom `--option` names.
+- **Human output is literal.** Rich markup in emitted strings, error titles and dashboard
+  state is no longer interpreted, and terminal control characters are stripped.
+- **One JSON document per `--json` run.** A second `app.emit()` is an error; emitting a result
+  and then raising an `AxiError` is still fine.
+- **Internal errors are redacted.** An uncaught exception reports only its class name; set
+  `BEHEAXI_DEBUG=1` to get the traceback in `detail`.
+- **Exit codes are honoured.** `typer.Exit(n)` exits `n`; `sys.exit("msg")` exits 1.
+- **`beheaxi conformance`** runs 7 checks (adds `json_error_envelope`, and `no_color` now
+  probes a real TTY), exits **10** when checks fail, and strips credential-named env vars from
+  the target (`--inherit-env` opts out).
+- **Domain exit codes** start at `beheaxi.DOMAIN_EXIT_FLOOR` (10); 0–9 belong to beheaxi.
+- **typer ≥ 0.16.0 is required.** The old `typer>=0.12` floor was false (0.12.x with current click breaks every boolean flag), and 0.13–0.15 mis-parse custom option declarations; CI now tests the declared floors.
+
+Tags are mutable; for byte-for-byte reproducible builds rely on your `uv.lock`, which records
+the resolved commit SHA of the git dependency.
 
 ⚠️ **Do not ship a `[tool.uv.sources]` override.** A local co-dev override —
 
