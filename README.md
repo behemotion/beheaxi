@@ -7,7 +7,7 @@ machine output, a structured problem+json error envelope with categorized exit c
 `describe --json` registration manifest generated from the command tree, and a black-box conformance
 runner.
 
-beheaxi is a **build-time library**, not a deployed service: no `deploy.md`, no port, no database.
+beheaxi is a **build-time library**, not a deployed service: no `DEPLOY.md`, no port, no database.
 Tools consume it as a versioned git dependency.
 
 See `docs/superpowers/specs/2026-06-21-beheaxi-design.md` for the design and
@@ -18,9 +18,11 @@ See `docs/superpowers/specs/2026-06-21-beheaxi-design.md` for the design and
 A tool's CLI is a `BeheaxiApp`; the standard is wired in at construction.
 
 ```python
+from importlib.metadata import version
+
 from beheaxi import BeheaxiApp, Status
 
-app = BeheaxiApp(name="behelib", version="1.0.0",
+app = BeheaxiApp(name="behelib", version=version("behelib"),
                  summary="Knowledge layer — agentic + graph RAG.")
 
 @app.command(pinned=True, mutating=False)
@@ -45,8 +47,8 @@ dashboard. Verify compliance with `beheaxi conformance "<your-tool>"`.
 
 Tools pin a tagged version; no PyPI publish needed.
 
-**Pin v0.1.1 or newer.** v0.1.0 catches only one of the two importable
-`ClickException` classes, so wherever standalone `click` is installed alongside
+**Pin the latest tag (v0.2.1, below); v0.1.1 is the absolute floor.** v0.1.0
+catches only one of the two importable `ClickException` classes, so wherever standalone `click` is installed alongside
 Typer's vendored copy (FastMCP causes exactly that), usage errors exit 1 instead
 of 2 — and the consumer fails its own `usage_exit_2` conformance check.
 
