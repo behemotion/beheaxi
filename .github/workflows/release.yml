@@ -1,0 +1,58 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+# The release job writes exactly one thing: the GitHub Release for the tag.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build & publish (py3.12)
+    runs-on: ubuntu-latest
+    env:
+      UV_LOCKED: "1"  # fail on a stale uv.lock instead of silently re-resolving
+    steps:
+      # Actions are pinned to full commit SHAs: tags are mutable. Dependabot bumps them.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # Pinned: uv.lock's `revision` follows the uv that wrote it; keep CI and local in step.
+          version: "0.12.23"
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Check (lint, types, tests, self-conformance)
+        run: |
+          uv run ruff check .
+          uv run mypy
+          uv run pytest -q
+          uv run beheaxi conformance "beheaxi" --json
+
+      - name: Version parity (tag vs pyproject)
+        run: |
+          test "${GITHUB_REF_NAME#v}" = "$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Smoke-test the built wheel
+        run: |
+          uv venv .venv-smoke
+          uv pip install --python .venv-smoke dist/beheaxi-*.whl
+          .venv-smoke/bin/beheaxi conformance ".venv-smoke/bin/beheaxi" --json
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Built from tag $GITHUB_REF_NAME. Install paths: README.md § Depending on beheaxi."
