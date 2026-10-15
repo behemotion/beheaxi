@@ -45,23 +45,28 @@ dashboard. Verify compliance with `beheaxi conformance "<your-tool>"`.
 
 ## Depending on beheaxi
 
-Tools pin a tagged version; every tag also ships a GitHub Release with the
-sdist and wheel. No PyPI.
+Install from PyPI (the primary channel since 0.2.3), pin a git tag, or take
+the wheel from the tag's GitHub Release — every version ships all three.
 
-**Pin the latest tag (v0.2.2, below); v0.1.1 is the absolute floor.** v0.1.0
-catches only one of the two importable `ClickException` classes, so wherever standalone `click` is installed alongside
+**Version floor: 0.1.1.** v0.1.0 catches only one of the two importable
+`ClickException` classes, so wherever standalone `click` is installed alongside
 Typer's vendored copy (FastMCP causes exactly that), usage errors exit 1 instead
 of 2 — and the consumer fails its own `usage_exit_2` conformance check.
 
 ```toml
-# pyproject.toml
-dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.2.2"]
+# pyproject.toml — from PyPI
+dependencies = ["beheaxi>=0.2.3"]
 ```
 
-Or install the release wheel directly (no git dependency):
+```toml
+# pyproject.toml — or pinned to the git tag
+dependencies = ["beheaxi @ git+https://github.com/behemotion/beheaxi@v0.2.3"]
+```
+
+Or install the release wheel directly:
 
 ```
-pip install "beheaxi @ https://github.com/behemotion/beheaxi/releases/download/v0.2.2/beheaxi-0.2.2-py3-none-any.whl"
+pip install "beheaxi @ https://github.com/behemotion/beheaxi/releases/download/v0.2.3/beheaxi-0.2.3-py3-none-any.whl"
 ```
 
 v0.1.2 is the first release carrying `LICENSE` and `NOTICE`, which Apache 2.0
@@ -120,6 +125,15 @@ A packaging release; no library or contract changes.
   procedure in `DEPLOY.md`). Consumers can keep pinning the git tag, or install
   the wheel from the release URL (§ Depending on beheaxi).
 - The published `.gitignore` no longer names agent-tool paths (2026-10-15).
+
+### 0.2.3
+
+A distribution release; no library or contract changes.
+
+- **beheaxi is on PyPI** (`pip install beheaxi`). Every version tag still
+  produces a GitHub Release with the sdist and wheel; CI publishes both to
+  PyPI via trusted publishing — no tokens anywhere (`DEPLOY.md` has the
+  procedure and the rollback/yank semantics).
 
 Tags are mutable; for byte-for-byte reproducible builds rely on your `uv.lock`, which records
 the resolved commit SHA of the git dependency.
