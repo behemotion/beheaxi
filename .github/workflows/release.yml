@@ -4,14 +4,19 @@ on:
   push:
     tags: ["v*"]
 
-# The release job writes exactly one thing: the GitHub Release for the tag.
+# Least privilege that still allows both publish targets:
+# the GitHub Release (contents) and PyPI trusted publishing (OIDC id-token).
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
     name: build & publish (py3.12)
     runs-on: ubuntu-latest
+    # Gate for the PyPI trusted publisher; the pypi environment has no
+    # protection rules, it only scopes the OIDC claim.
+    environment: pypi
     env:
       UV_LOCKED: "1"  # fail on a stale uv.lock instead of silently re-resolving
     steps:
@@ -56,3 +61,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
             --title "$GITHUB_REF_NAME" \
             --notes "Built from tag $GITHUB_REF_NAME. Install paths: README.md § Depending on beheaxi."
+
+      - name: Publish to PyPI
+        # Trusted publishing (OIDC): no tokens anywhere; the publisher is
+        # registered on pypi.org (see DEPLOY.md § Prerequisites).
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
